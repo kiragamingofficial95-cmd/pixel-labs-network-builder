@@ -570,3 +570,341 @@ def enrich_linkedin_profile(profile_id: int):
     """Enrich a single profile with AI-generated insights."""
     from linkedin_helper import enrich_single_profile
     return enrich_single_profile(profile_id)
+
+
+# ============== LINKEDIN SCRAPING ==============
+
+@router.post("/linkedin/login")
+async def linkedin_login(data: dict):
+    """Login to LinkedIn for scraping.
+
+    Pass { "email": "...", "password": "..." }
+    """
+    from linkedin_scraper import scraper
+
+    email = data.get("email", "")
+    password = data.get("password", "")
+
+    if not email or not password:
+        return {"error": "Email and password required"}
+
+    await scraper.start()
+    result = await scraper.login(email, password)
+    await scraper.stop()
+    return result
+
+
+@router.post("/linkedin/scrape-search")
+async def scrape_linkedin_search(data: dict):
+    """Search LinkedIn for profiles and scrape them.
+
+    Pass {
+        "keywords": "landscaping owner",
+        "title": "CEO",
+        "company": "",
+        "location": "Texas",
+        "industry": "",
+        "max_results": 25,
+        "filter_by_icp": true,
+        "enrich_qualified": true
+    }
+
+    Scrapes LinkedIn search results, stores profiles in DB,
+    then uses Groq to filter by ICP and enrich qualified ones.
+    """
+    from linkedin_scraper import scraper
+    from database import get_connection
+    from icp_profile import get_active_icp
+    from ai_client import ai_client
+
+    keywords = data.get("keywords", "")
+    title = data.get("title", "")
+    company = data.get("company", "")
+    location = data.get("location", "")
+    industry = data.get("industry", "")
+    max_results = data.get("max_results", 25)
+    filter_by_icp = data.get("filter_by_icp", True)
+    enrich_qualified = data.get("enrich_qualified", True)
+
+    # Step 1: Scrape LinkedIn
+    await scraper.start()
+    search_result = await scraper.search_profiles(
+        keywords=keywords,
+        title=title,
+        company=company,
+        location=location,
+        industry=industry,
+        max_results=max_results,
+    )
+    await scraper.stop()
+
+    if search_result.get("error"):
+        return {"error": search_result["error"]}
+
+    profiles = search_result.get("profiles", [])
+
+    # Step 2: Store in database
+    conn = get_connection()
+    cursor = conn.cursor()
+    stored = 0
+    skipped = 0
+    stored_profiles = []
+
+    for p in profiles:
+        name = p.get("name", "").strip()
+        if not name:
+            skipped += 1
+            continue
+
+        company_val = p.get("company", "")
+        # Deduplicate
+        cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
+        if cursor.fetchone():
+            skipped += 1
+            continue
+
+        cursor.execute(
+            """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
+            (
+                name,
+                p.get("job_title", ""),
+                company_val,
+                p.get("location", ""),
+                industry,
+                p.get("bio", ""),
+                p.get("linkedin_url", ""),
+            )
+        )
+        stored_profiles.append({
+            "id": cursor.lastrowid,
+            "name": name,
+            "job_title": p.get("job_title", ""),
+            "company": company_val,
+            "location": p.get("location", ""),
+            "bio": p.get("bio", ""),
+            "linkedin_url": p.get("linkedin_url", ""),
+        })
+        stored += 1
+
+    conn.commit()
+    conn.close()
+
+    result = {
+        "scraped": len(profiles),
+        "stored": stored,
+        "skipped": skipped,
+        "profiles": stored_profiles,
+    }
+
+    # Step 3: Filter by ICP using Groq
+    if filter_by_icp and stored_profiles and ai_client.available:
+        icp_profile = get_active_icp()
+        if icp_profile:
+            icp_criteria = {
+                "target_industries": icp_profile.get("target_industries", []),
+                "target_titles": icp_profile.get("target_titles", []),
+                "target_keywords": icp_profile.get("target_keywords", []),
+                "exclude_keywords": icp_profile.get("exclude_keywords", []),
+                "target_locations": icp_profile.get("target_locations", []),
+            }
+            filter_result = ai_client.filter_profiles_by_icp(stored_profiles, icp_criteria)
+            result["icp_filter"] = filter_result
+
+            # Step 4: Enrich qualified profiles
+            if enrich_qualified and filter_result.get("filtered"):
+                qualified = [f for f in filter_result["filtered"] if f.get("icp_score", 0) >= 60]
+                qualified_profiles = []
+                for q in qualified:
+                    idx = q.get("index", 0) - 1
+                    if 0 <= idx < len(stored_profiles):
+                        qualified_profiles.append(stored_profiles[idx])
+
+                if qualified_profiles:
+                    enrichment = ai_client.enrich_profiles(qualified_profiles)
+                    result["enrichment"] = enrichment
+                    result["qualified_count"] = len(qualified)
+                    result["enriched_count"] = len(enrichment)
+
+    return result
+
+
+@router.post("/linkedin/scrape-profile")
+async def scrape_single_profile(data: dict):
+    """Scrape a single LinkedIn profile page.
+
+    Pass { "url": "https://www.linkedin.com/in/username/" }
+    """
+    from linkedin_scraper import scraper
+    from database import get_connection
+
+    url = data.get("url", "")
+    if not url:
+        return {"error": "LinkedIn URL required"}
+
+    # Normalize URL
+    if not url.startswith("http"):
+        url = "https://www.linkedin.com/in/" + url
+
+    await scraper.start()
+    result = await scraper.scrape_profile(url)
+    await scraper.stop()
+
+    if result.get("error"):
+        return {"error": result["error"]}
+
+    profile = result.get("profile", {})
+
+    # Store in database
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    name = profile.get("name", "")
+    company = profile.get("company", "")
+
+    # Check duplicate
+    cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company))
+    existing = cursor.fetchone()
+
+    if existing:
+        prospect_id = existing["id"]
+        # Update existing
+        cursor.execute(
+            """UPDATE prospects SET job_title = COALESCE(?, job_title),
+               location = COALESCE(?, location), bio = COALESCE(?, bio),
+               linkedin_url = COALESCE(?, linkedin_url)
+               WHERE id = ?""",
+            (profile.get("job_title"), profile.get("location"), profile.get("bio"), url, prospect_id)
+        )
+    else:
+        cursor.execute(
+            """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
+            (
+                name,
+                profile.get("job_title", ""),
+                company,
+                profile.get("location", ""),
+                "",
+                profile.get("bio", ""),
+                url,
+            )
+        )
+        prospect_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "prospect_id": prospect_id,
+        "profile": profile,
+        "action": "updated" if existing else "created",
+    }
+
+
+@router.post("/linkedin/scrape-and-enrich")
+async def scrape_and_enrich(data: dict):
+    """Full pipeline: scrape LinkedIn search -> store -> ICP filter -> enrich.
+
+    Pass {
+        "keywords": "landscaping company owner Texas",
+        "max_results": 10,
+        "icp_criteria": { ... }  // optional, uses active ICP if not provided
+    }
+    """
+    from linkedin_scraper import scraper
+    from database import get_connection
+    from icp_profile import get_active_icp
+    from ai_client import ai_client
+
+    keywords = data.get("keywords", "")
+    max_results = data.get("max_results", 10)
+    icp_criteria = data.get("icp_criteria")
+
+    if not keywords:
+        return {"error": "Keywords required"}
+
+    # Step 1: Scrape
+    await scraper.start()
+    search_result = await scraper.search_profiles(keywords=keywords, max_results=max_results)
+    await scraper.stop()
+
+    if search_result.get("error"):
+        return {"error": search_result["error"]}
+
+    profiles = search_result.get("profiles", [])
+    if not profiles:
+        return {"message": "No profiles found", "profiles": []}
+
+    # Step 2: Store
+    conn = get_connection()
+    cursor = conn.cursor()
+    stored_profiles = []
+
+    for p in profiles:
+        name = p.get("name", "").strip()
+        if not name:
+            continue
+        company_val = p.get("company", "")
+
+        cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
+        if cursor.fetchone():
+            continue
+
+        cursor.execute(
+            """INSERT INTO prospects (name, job_title, company, location, bio, linkedin_url, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'NEW')""",
+            (name, p.get("job_title", ""), company_val, p.get("location", ""), p.get("bio", ""), p.get("linkedin_url", ""))
+        )
+        stored_profiles.append({
+            "id": cursor.lastrowid,
+            "name": name,
+            "job_title": p.get("job_title", ""),
+            "company": company_val,
+            "location": p.get("location", ""),
+            "bio": p.get("bio", ""),
+            "linkedin_url": p.get("linkedin_url", ""),
+        })
+
+    conn.commit()
+    conn.close()
+
+    # Step 3: ICP Filter + Enrich via Groq
+    if not icp_criteria:
+        icp_profile = get_active_icp()
+        if icp_profile:
+            icp_criteria = {
+                "target_industries": icp_profile.get("target_industries", []),
+                "target_titles": icp_profile.get("target_titles", []),
+                "target_keywords": icp_profile.get("target_keywords", []),
+                "exclude_keywords": icp_profile.get("exclude_keywords", []),
+                "target_locations": icp_profile.get("target_locations", []),
+            }
+
+    result = {
+        "scraped": len(profiles),
+        "stored": len(stored_profiles),
+        "profiles": stored_profiles,
+    }
+
+    if icp_criteria and stored_profiles and ai_client.available:
+        # Filter
+        filter_result = ai_client.filter_profiles_by_icp(stored_profiles, icp_criteria)
+        result["icp_filter"] = filter_result
+
+        # Enrich qualified
+        qualified = [f for f in filter_result.get("filtered", []) if f.get("icp_score", 0) >= 60]
+        qualified_profiles = []
+        for q in qualified:
+            idx = q.get("index", 0) - 1
+            if 0 <= idx < len(stored_profiles):
+                qualified_profiles.append(stored_profiles[idx])
+
+        if qualified_profiles:
+            enrichment = ai_client.enrich_profiles(qualified_profiles)
+            result["enrichment"] = enrichment
+            result["qualified_count"] = len(qualified)
+            result["enriched_count"] = len(enrichment)
+
+    return result
