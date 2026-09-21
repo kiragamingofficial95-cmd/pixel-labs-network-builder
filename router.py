@@ -920,75 +920,82 @@ async def xray_search(data: dict):
     - keywords="landscaping" -> single search
     - all_keywords=["landscaping", "HVAC", "plumbing"] -> separate searches per keyword
     """
-    from xray_search import xray
+    try:
+        from xray_search import xray
 
-    # Parse keywords - support both single and multi
-    keywords = data.get("keywords", "")
-    all_keywords = data.get("all_keywords", [])
+        # Parse keywords - support both single and multi
+        keywords = data.get("keywords", "")
+        all_keywords = data.get("all_keywords", [])
 
-    # If keywords string contains commas, split into list
-    if keywords and "," in keywords:
-        all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
-    elif keywords and not all_keywords:
-        all_keywords = [keywords]
+        # If keywords string contains commas, split into list
+        if keywords and "," in keywords:
+            all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        elif keywords and not all_keywords:
+            all_keywords = [keywords]
 
-    await xray.start()
-    result = await xray.search_xray(
-        keywords=keywords,
-        all_keywords=all_keywords if len(all_keywords) > 1 else None,
-        title=data.get("title", ""),
-        company=data.get("company", ""),
-        location=data.get("location", ""),
-        industry=data.get("industry", ""),
-        max_results=data.get("max_results", 25),
-        pages_to_search=data.get("pages_to_search", 3),
-    )
-    await xray.stop()
-    return result
+        await xray.start()
+        result = await xray.search_xray(
+            keywords=keywords,
+            all_keywords=all_keywords if len(all_keywords) > 1 else None,
+            title=data.get("title", ""),
+            company=data.get("company", ""),
+            location=data.get("location", ""),
+            industry=data.get("industry", ""),
+            max_results=data.get("max_results", 25),
+            pages_to_search=data.get("pages_to_search", 3),
+        )
+        await xray.stop()
+        return result
+    except Exception as e:
+        return {"error": str(e)[:500], "profiles": [], "total": 0}
 
 
 @router.post("/xray/scrape-profile")
 async def xray_scrape_profile(data: dict):
     """Scrape a single public LinkedIn profile (no login needed)."""
-    from xray_search import xray
-    url = data.get("url", "")
-    if not url:
-        return {"error": "LinkedIn URL required"}
-    await xray.start()
-    result = await xray.scrape_public_profile(url)
-    await xray.stop()
-    return result
+    try:
+        from xray_search import xray
+        url = data.get("url", "")
+        if not url:
+            return {"error": "LinkedIn URL required"}
+        await xray.start()
+        result = await xray.scrape_public_profile(url)
+        await xray.stop()
+        return result
+    except Exception as e:
+        return {"error": str(e)[:500]}
 
 
 @router.post("/xray/search-and-store")
 async def xray_search_and_store(data: dict):
     """X-Ray Google search -> scrape profiles -> store in DB. Supports multi-keyword."""
-    from xray_search import xray
-    from database import get_connection
+    try:
+        from xray_search import xray
+        from database import get_connection
 
-    keywords = data.get("keywords", "")
-    all_keywords = data.get("all_keywords", [])
+        keywords = data.get("keywords", "")
+        all_keywords = data.get("all_keywords", [])
 
-    if keywords and "," in keywords:
-        all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
-    elif keywords and not all_keywords:
-        all_keywords = [keywords]
+        if keywords and "," in keywords:
+            all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+        elif keywords and not all_keywords:
+            all_keywords = [keywords]
 
-    title = data.get("title", "")
-    company = data.get("company", "")
-    location = data.get("location", "")
-    industry = data.get("industry", "")
-    max_results = data.get("max_results", 10)
+        title = data.get("title", "")
+        company = data.get("company", "")
+        location = data.get("location", "")
+        industry = data.get("industry", "")
+        max_results = data.get("max_results", 10)
 
-    # Step 1: X-Ray search Google
-    await xray.start()
-    search_result = await xray.search_xray(
-        keywords=keywords,
-        all_keywords=all_keywords if len(all_keywords) > 1 else None,
-        title=title, company=company,
-        location=location, industry=industry,
-        max_results=max_results, pages_to_search=2,
-    )
+        # Step 1: X-Ray search Google
+        await xray.start()
+        search_result = await xray.search_xray(
+            keywords=keywords,
+            all_keywords=all_keywords if len(all_keywords) > 1 else None,
+            title=title, company=company,
+            location=location, industry=industry,
+            max_results=max_results, pages_to_search=2,
+        )
     profiles = search_result.get("profiles", [])
 
     # Step 2: Scrape each public profile
@@ -1043,15 +1050,18 @@ async def xray_search_and_store(data: dict):
         "skipped": skipped,
         "profiles": enriched_profiles,
     }
+    except Exception as e:
+        return {"error": str(e)[:500], "profiles": [], "stored": 0, "found": 0}
 
 
 @router.post("/xray/full-pipeline")
 async def xray_full_pipeline(data: dict):
     """Full pipeline: X-Ray search -> scrape -> store -> ICP filter -> enrich via Groq. Supports multi-keyword."""
-    from xray_search import xray
-    from database import get_connection
-    from icp_profile import get_active_icp
-    from ai_client import ai_client
+    try:
+        from xray_search import xray
+        from database import get_connection
+        from icp_profile import get_active_icp
+        from ai_client import ai_client
 
     keywords = data.get("keywords", "")
     all_keywords = data.get("all_keywords", [])
@@ -1167,3 +1177,5 @@ async def xray_full_pipeline(data: dict):
             result["enriched_count"] = len(enrichment)
 
     return result
+    except Exception as e:
+        return {"error": str(e)[:500], "profiles": [], "stored": 0, "found": 0}

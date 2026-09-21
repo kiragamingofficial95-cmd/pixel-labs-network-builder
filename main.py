@@ -1,8 +1,9 @@
 """Pixel Labs Network Builder - Main FastAPI Application."""
 import os
-from fastapi import FastAPI
+import traceback
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import init_db, get_stats
@@ -35,6 +36,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handler - always return JSON, never HTML
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and return JSON instead of HTML."""
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc)[:500], "detail": "Internal server error"},
+    )
 
 # Include API routes BEFORE page routes
 app.include_router(api_router, prefix="/api")

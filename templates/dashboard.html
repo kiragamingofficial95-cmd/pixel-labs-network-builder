@@ -1177,7 +1177,13 @@ function showToast(message, type = 'info') {
 async function apiGet(endpoint) {
     try {
         const res = await fetch(`${API_BASE}${endpoint}`);
-        return await res.json();
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            showToast(`Server error (${res.status})`, 'error');
+            return null;
+        }
     } catch (err) {
         showToast(`Error: ${err.message}`, 'error');
         return null;
@@ -1191,10 +1197,17 @@ async function apiPost(endpoint, data) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return await res.json();
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            // Response was HTML, not JSON
+            showToast(`Server error (${res.status}). Try running locally: python serve.py`, 'error');
+            return { error: `Server returned HTML instead of JSON (status ${res.status})` };
+        }
     } catch (err) {
         showToast(`Error: ${err.message}`, 'error');
-        return null;
+        return { error: err.message };
     }
 }
 
