@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "main.py",
+      "src": "*.py",
       "use": "@vercel/python"
     }
   ],
@@ -16,5 +16,6 @@
       "dest": "main.py"
     }
   ],
-  "framework": "fastapi"
+  "framework": "fastapi",
+  "regions": ["iad1"]
 }
