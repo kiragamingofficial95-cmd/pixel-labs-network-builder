@@ -4,10 +4,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# OpenAI Configuration
+# ============================================
+# AI Provider Configuration
+# Supports: OpenAI, Groq (OpenAI-compatible), or any provider
+# ============================================
+AI_PROVIDER = os.getenv("AI_PROVIDER", "groq")  # "openai" or "groq"
+
+# Groq Configuration
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
+
+# OpenAI Configuration (fallback)
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# Use Groq if available, otherwise OpenAI
+if GROQ_API_KEY and AI_PROVIDER == "groq":
+    AI_BASE_URL = GROQ_BASE_URL
+    AI_API_KEY = GROQ_API_KEY
+    AI_MODEL = GROQ_MODEL
+else:
+    AI_BASE_URL = OPENAI_BASE_URL
+    AI_API_KEY = OPENAI_API_KEY
+    AI_MODEL = OPENAI_MODEL
 
 # Application Settings
 APP_HOST = os.getenv("APP_HOST", "127.0.0.1")

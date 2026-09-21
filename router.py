@@ -430,3 +430,83 @@ def batch_score_icp():
         })
 
     return {"scored": len(results), "results": results}
+
+
+# ============== AI ENRICHMENT ==============
+
+@router.post("/ai/filter-and-enrich")
+def filter_and_enrich(data: dict):
+    """Filter all prospects by ICP using AI, then enrich qualified ones.
+
+    Expected data:
+    - profiles: list of prospect dicts (optional, defaults to DB)
+    - icp_criteria: dict with target_industries, target_titles, etc.
+    """
+    from ai_client import ai_client
+    from database import get_connection
+    from icp_profile import get_active_icp
+
+    # Get profiles from DB if not provided
+    profiles = data.get("profiles")
+    if not profiles:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM prospects WHERE status != 'DO_NOT_CONTACT'")
+        rows = cursor.fetchall()
+        conn.close()
+        profiles = []
+        for row in rows:
+            profiles.append({
+                "name": row["name"],
+                "job_title": row.get("job_title"),
+                "company": row.get("company"),
+                "location": row.get("location"),
+                "industry": row.get("industry"),
+                "bio": row.get("bio"),
+                "about": row.get("about"),
+                "notes": row.get("notes"),
+                "linkedin_url": row.get("linkedin_url"),
+            })
+
+    icp_criteria = data.get("icp_criteria")
+    if not icp_criteria:
+        icp_profile = get_active_icp()
+        if icp_profile:
+            icp_criteria = {
+                "target_industries": icp_profile.get("target_industries", []),
+                "target_titles": icp_profile.get("target_titles", []),
+                "target_keywords": icp_profile.get("target_keywords", []),
+                "exclude_keywords": icp_profile.get("exclude_keywords", []),
+                "target_locations": icp_profile.get("target_locations", []),
+            }
+
+    if not profiles:
+        return {"message": "No profiles found", "total": 0}
+
+    result = ai_client.filter_and_enrich_all(profiles, icp_criteria)
+    return result
+
+
+@router.post("/ai/enrich")
+def enrich_profiles(data: dict):
+    """Enrich already-qualified profiles with AI insights."""
+    from ai_client import ai_client
+
+    profiles = data.get("profiles", [])
+    if not profiles:
+        return {"message": "No profiles provided"}
+
+    results = ai_client.enrich_profiles(profiles)
+    return {"enriched": len(results), "results": results}
+
+
+@router.get("/ai/status")
+def ai_status():
+    """Check AI provider status."""
+    from ai_client import ai_client
+    return {
+        "available": ai_client.available,
+        "provider": ai_client.provider,
+        "model": ai_client.model,
+        "base_url": AI_BASE_URL,
+    }
