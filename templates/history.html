@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History - Pixel Labs</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">Pixel Labs <span>Network Builder</span></div>
+        <div class="nav-links">
+            <a class="nav-link" onclick="showPage('dashboard')">Dashboard</a>
+            <a class="nav-link" onclick="showPage('import')">Import</a>
+            <a class="nav-link" onclick="showPage('queue')">Queue</a>
+            <a class="nav-link active" onclick="showPage('history')">History</a>
+            <a class="nav-link" onclick="showPage('settings')">Settings</a>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="section-header">
+            <h1 class="section-title">History & Activity</h1>
+        </div>
+        <div class="grid-4" style="margin-bottom: 24px;">
+            <div class="stat-card"><div class="stat-value" id="hist-today">0</div><div class="stat-label">Added Today</div></div>
+            <div class="stat-card"><div class="stat-value" id="hist-sent-today">0</div><div class="stat-label">Sent Today</div></div>
+            <div class="stat-card"><div class="stat-value" id="hist-connected-today">0</div><div class="stat-label">Connected Today</div></div>
+            <div class="stat-card"><div class="stat-value" id="hist-total-actions">0</div><div class="stat-label">Total Actions</div></div>
+        </div>
+        <div class="card">
+            <div class="card-header"><h2 class="card-title">Activity Log</h2></div>
+            <div class="table-container">
+                <table>
+                    <thead><tr><th>Date</th><th>Name</th><th>Company</th><th>Action</th><th>Details</th></tr></thead>
+                    <tbody id="activity-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="toast-container" id="toast-container"></div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

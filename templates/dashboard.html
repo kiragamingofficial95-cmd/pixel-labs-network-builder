@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Labs Network Builder</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">Pixel Labs <span>Network Builder</span></div>
+        <div class="nav-links">
+            <a class="nav-link active" onclick="showPage('dashboard')">Dashboard</a>
+            <a class="nav-link" onclick="showPage('import')">Import</a>
+            <a class="nav-link" onclick="showPage('queue')">Queue</a>
+            <a class="nav-link" onclick="showPage('history')">History</a>
+            <a class="nav-link" onclick="showPage('settings')">Settings</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Dashboard Page -->
+        <div id="page-dashboard" class="page">
+            <div class="section-header">
+                <h1 class="section-title">Dashboard</h1>
+                <span id="today-date" style="color: var(--gray-500);"></span>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="grid-4" style="margin-bottom: 24px;">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total">0</div>
+                    <div class="stat-label">Total Researched</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-sent">0</div>
+                    <div class="stat-label">Connections Sent</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-connected">0</div>
+                    <div class="stat-label">Connected</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-followups">0</div>
+                    <div class="stat-label">Follow-ups</div>
+                </div>
+            </div>
+
+            <!-- Network Balance -->
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h2 class="card-title">Network Balance</h2>
+                </div>
+                <div id="balance-message" style="margin-bottom: 12px; font-weight: 500;"></div>
+                <div class="balance-bar" id="balance-bar"></div>
+                <div class="balance-legend" id="balance-legend"></div>
+                <div id="balance-recommendations" style="margin-top: 12px;"></div>
+            </div>
+
+            <!-- Today's Queue -->
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h2 class="card-title">Today's Networking Queue</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="queue-target" class="form-select" style="width: auto;" onchange="loadQueue()">
+                            <option value="10">10/day</option>
+                            <option value="15">15/day</option>
+                            <option value="20" selected>20/day</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="loadQueue()">Refresh</button>
+                    </div>
+                </div>
+                <div id="queue-container"></div>
+            </div>
+
+            <!-- High Relevance -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">High Relevance Prospects</h2>
+                    <a class="btn btn-outline btn-sm" href="#" onclick="showPage('queue')">View All</a>
+                </div>
+                <div id="high-relevance-container"></div>
+            </div>
+        </div>
+
+        <!-- Import Page -->
+        <div id="page-import" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title">Import Prospects</h1>
+            </div>
+
+            <div class="grid-3" style="margin-bottom: 24px;">
+                <div class="import-card" onclick="document.getElementById('csv-file').click()">
+                    <h3>📄 CSV File</h3>
+                    <p>Import .csv files with prospect data</p>
+                </div>
+                <div class="import-card" onclick="document.getElementById('xlsx-file').click()">
+                    <h3>📊 Excel File</h3>
+                    <p>Import .xlsx/.xls files with prospect data</p>
+                </div>
+                <div class="import-card" onclick="document.getElementById('json-file').click()">
+                    <h3>📋 JSON File</h3>
+                    <p>Import .json arrays of prospect data</p>
+                </div>
+            </div>
+
+            <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleFileUpload('csv')">
+            <input type="file" id="xlsx-file" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload('xlsx')">
+            <input type="file" id="json-file" accept=".json" style="display:none" onchange="handleFileUpload('json')">
+
+            <div id="import-status"></div>
+
+            <!-- Manual Add -->
+            <div class="card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h2 class="card-title">Add Prospect Manually</h2>
+                </div>
+                <form id="manual-add-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Name *</label>
+                            <input type="text" class="form-input" id="manual-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Job Title</label>
+                            <input type="text" class="form-input" id="manual-job_title">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Company</label>
+                            <input type="text" class="form-input" id="manual-company">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Location</label>
+                            <input type="text" class="form-input" id="manual-location">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">LinkedIn URL</label>
+                            <input type="url" class="form-input" id="manual-linkedin_url">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Industry</label>
+                            <input type="text" class="form-input" id="manual-industry">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Bio / About</label>
+                        <textarea class="form-textarea" id="manual-bio"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Notes</label>
+                        <input type="text" class="form-input" id="manual-notes">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Add Prospect</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Queue Page -->
+        <div id="page-queue" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title">Networking Queue</h1>
+                <div style="display: flex; gap: 8px;">
+                    <select id="queue-target-page" class="form-select" style="width: auto;" onchange="loadQueue()">
+                        <option value="10">10/day</option>
+                        <option value="15">15/day</option>
+                        <option value="20" selected>20/day</option>
+                        <option value="25">25/day</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="loadQueue()">Refresh</button>
+                    <button class="btn btn-success btn-sm" onclick="exportQueue()">Export CSV</button>
+                </div>
+            </div>
+            <div id="queue-full-container"></div>
+        </div>
+
+        <!-- Person Details Page -->
+        <div id="page-person" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title" id="person-title">Person Details</h1>
+                <button class="btn btn-outline btn-sm" onclick="showPage('queue')">← Back to Queue</button>
+            </div>
+            <div id="person-detail-container"></div>
+        </div>
+
+        <!-- History Page -->
+        <div id="page-history" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title">History & Activity</h1>
+            </div>
+            <div class="grid-4" style="margin-bottom: 24px;">
+                <div class="stat-card">
+                    <div class="stat-value" id="hist-today">0</div>
+                    <div class="stat-label">Added Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="hist-sent-today">0</div>
+                    <div class="stat-label">Sent Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="hist-connected-today">0</div>
+                    <div class="stat-label">Connected Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="hist-total-actions">0</div>
+                    <div class="stat-label">Total Actions</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Activity Log</h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>Date</th><th>Name</th><th>Company</th><th>Action</th><th>Details</th></tr>
+                        </thead>
+                        <tbody id="activity-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Page -->
+        <div id="page-settings" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title">Settings</h1>
+            </div>
+            <div class="grid-2">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">Daily Target</h2>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Prospects Per Day</label>
+                        <select class="form-select" id="settings-target" onchange="saveTarget()">
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20" selected>20</option>
+                            <option value="25">25</option>
+                            <option value="30">30</option>
+                            <option value="40">40</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="card-title">AI Provider</h2>
+                    </div>
+                    <div id="ai-status">
+                        <p>Checking AI status...</p>
+                    </div>
+                    <div style="margin-top: 12px; font-size: 13px; color: var(--gray-500);">
+                        Configure via <code>.env</code> file with OPENAI_API_KEY
+                    </div>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Category Distribution Presets</h2>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr><th>Daily Target</th><th>Clients</th><th>Referral Partners</th><th>Agency/Business</th><th>Professional Network</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>10/day</td><td>3</td><td>3</td><td>2</td><td>2</td></tr>
+                            <tr><td>15/day</td><td>4</td><td>4</td><td>4</td><td>3</td></tr>
+                            <tr><td>20/day</td><td>5</td><td>5</td><td>5</td><td>5</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <div class="card-header">
+                    <h2 class="card-title">Privacy & Safety</h2>
+                </div>
+                <div style="font-size: 14px; color: var(--gray-700); line-height: 1.8;">
+                    <ul style="margin-left: 20px;">
+                        <li>All data stored locally in SQLite database</li>
+                        <li>API keys stored in .env file only</li>
+                        <li>No LinkedIn passwords, cookies, or session tokens stored</li>
+                        <li>No browser automation or scraping</li>
+                        <li>All connection requests are manual - YOU decide</li>
+                        <li>Database never uploaded to external services</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+    <div id="person-modal" class="modal-overlay">
+        <div class="modal" id="person-modal-content"></div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

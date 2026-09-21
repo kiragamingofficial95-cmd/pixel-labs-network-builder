@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Prospects - Pixel Labs</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">Pixel Labs <span>Network Builder</span></div>
+        <div class="nav-links">
+            <a class="nav-link" onclick="showPage('dashboard')">Dashboard</a>
+            <a class="nav-link active" onclick="showPage('import')">Import</a>
+            <a class="nav-link" onclick="showPage('queue')">Queue</a>
+            <a class="nav-link" onclick="showPage('history')">History</a>
+            <a class="nav-link" onclick="showPage('settings')">Settings</a>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="section-header">
+            <h1 class="section-title">Import Prospects</h1>
+        </div>
+        <div class="grid-3" style="margin-bottom: 24px;">
+            <div class="import-card" onclick="document.getElementById('csv-file').click()">
+                <h3>📄 CSV File</h3>
+                <p>Import .csv files with prospect data</p>
+            </div>
+            <div class="import-card" onclick="document.getElementById('xlsx-file').click()">
+                <h3>📊 Excel File</h3>
+                <p>Import .xlsx/.xls files with prospect data</p>
+            </div>
+            <div class="import-card" onclick="document.getElementById('json-file').click()">
+                <h3>📋 JSON File</h3>
+                <p>Import .json arrays of prospect data</p>
+            </div>
+        </div>
+        <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleFileUpload('csv')">
+        <input type="file" id="xlsx-file" accept=".xlsx,.xls" style="display:none" onchange="handleFileUpload('xlsx')">
+        <input type="file" id="json-file" accept=".json" style="display:none" onchange="handleFileUpload('json')">
+        <div id="import-status"></div>
+        <div class="card" style="margin-top: 24px;">
+            <div class="card-header"><h2 class="card-title">Add Prospect Manually</h2></div>
+            <form id="manual-add-form">
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Name *</label><input type="text" class="form-input" id="manual-name" required></div>
+                    <div class="form-group"><label class="form-label">Job Title</label><input type="text" class="form-input" id="manual-job_title"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">Company</label><input type="text" class="form-input" id="manual-company"></div>
+                    <div class="form-group"><label class="form-label">Location</label><input type="text" class="form-input" id="manual-location"></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">LinkedIn URL</label><input type="url" class="form-input" id="manual-linkedin_url"></div>
+                    <div class="form-group"><label class="form-label">Industry</label><input type="text" class="form-input" id="manual-industry"></div>
+                </div>
+                <div class="form-group"><label class="form-label">Bio / About</label><textarea class="form-textarea" id="manual-bio"></textarea></div>
+                <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-input" id="manual-notes"></div>
+                <button type="submit" class="btn btn-primary">Add Prospect</button>
+            </form>
+        </div>
+    </div>
+    <div class="toast-container" id="toast-container"></div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

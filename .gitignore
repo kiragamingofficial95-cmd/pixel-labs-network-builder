@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.env.local
+.venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~$
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Uploads
+uploads/
+
+# Test files
+test_*.py
+verify.py
+
+# Logs
+*.log
+
+# Environment files (keep .env.example but not .env)
+.env
+
+# Server
+run.bat
+run_server.bat
+serve.py

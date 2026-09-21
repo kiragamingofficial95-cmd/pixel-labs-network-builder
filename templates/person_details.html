@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Person Details - Pixel Labs</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-brand">Pixel Labs <span>Network Builder</span></div>
+        <div class="nav-links">
+            <a class="nav-link" onclick="showPage('dashboard')">Dashboard</a>
+            <a class="nav-link" onclick="showPage('import')">Import</a>
+            <a class="nav-link" onclick="showPage('queue')">Queue</a>
+            <a class="nav-link" onclick="showPage('history')">History</a>
+            <a class="nav-link" onclick="showPage('settings')">Settings</a>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="section-header">
+            <h1 class="section-title" id="person-title">Person Details</h1>
+            <button class="btn btn-outline btn-sm" onclick="showPage('queue')">← Back to Queue</button>
+        </div>
+        <div id="person-detail-container"></div>
+    </div>
+    <div class="toast-container" id="toast-container"></div>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
