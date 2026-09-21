@@ -743,6 +743,49 @@ tr:hover {
                 </div>
             </div>
 
+            <!-- Quick Find -->
+            <div class="card" style="margin-bottom: 24px; border: 2px solid var(--primary); background: linear-gradient(135deg, #f0f9ff 0%, #eff6ff 100%);">
+                <div class="card-header">
+                    <h2 class="card-title" style="color: var(--primary);">Quick Find</h2>
+                    <span style="font-size: 12px; color: var(--gray-500);">X-Ray Google Search + Groq AI</span>
+                </div>
+                <div class="form-row" style="margin-bottom: 12px;">
+                    <div class="form-group">
+                        <label class="form-label">Search Keywords</label>
+                        <input class="form-input" id="quick-keywords" placeholder="e.g. landscaping, HVAC, plumbing" value="landscaping owner">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input class="form-input" id="quick-location" placeholder="e.g. Texas, Austin">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                    <div>
+                        <label class="form-label">Daily Target</label>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-outline btn-sm quick-target-btn" data-target="10" onclick="setQuickTarget(10)">10/day</button>
+                            <button class="btn btn-outline btn-sm quick-target-btn" data-target="15" onclick="setQuickTarget(15)">15/day</button>
+                            <button class="btn btn-primary btn-sm quick-target-btn active" data-target="20" onclick="setQuickTarget(20)">20/day</button>
+                        </div>
+                    </div>
+                    <div style="flex: 1;">
+                        <div id="quick-breakdown" style="font-size: 12px; color: var(--gray-500); padding: 4px 0;">
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#dbeafe; margin-right:3px;"></span>5 Clients
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#d1fae5; margin-right:3px; margin-left:8px;"></span>5 Referral Partners
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ede9fe; margin-right:3px; margin-left:8px;"></span>5 Agency/Business
+                            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f3f4f6; margin-right:3px; margin-left:8px;"></span>5 Professional Network
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="quick-search-btn" onclick="startQuickSearch()">
+                        Find Profiles
+                    </button>
+                    <button class="btn btn-success" id="quick-pipeline-btn" onclick="startQuickPipeline()" style="display: none;">
+                        Find + Enrich
+                    </button>
+                </div>
+                <div id="quick-status" style="font-size: 12px; color: var(--gray-500); margin-top: 8px; min-height: 18px;"></div>
+            </div>
+
             <!-- Network Balance -->
             <div class="card" style="margin-bottom: 24px;">
                 <div class="card-header">
@@ -1202,6 +1245,12 @@ async function loadDashboard() {
 
     // Network Balance
     renderBalance(data);
+
+    // Check AI for quick pipeline button
+    const ai = await apiGet('/ai/status');
+    if (ai && ai.available) {
+        document.getElementById('quick-pipeline-btn').style.display = 'inline-block';
+    }
 
     // Queue
     renderQueue(data.queue);
@@ -1849,6 +1898,113 @@ document.addEventListener('keydown', (e) => {
 
 // ======== FIND PAGE - X-RAY SEARCH ========
 let findSearchData = null;
+let quickTarget = 20;
+const categoryPresets = {
+    10: { clients: 3, referral: 3, agency: 2, professional: 2 },
+    15: { clients: 4, referral: 4, agency: 4, professional: 3 },
+    20: { clients: 5, referral: 5, agency: 5, professional: 5 },
+};
+
+function setQuickTarget(target) {
+    quickTarget = target;
+    document.querySelectorAll('.quick-target-btn').forEach(btn => {
+        btn.classList.remove('active', 'btn-primary');
+        btn.classList.add('btn-outline');
+    });
+    const active = document.querySelector(`.quick-target-btn[data-target="${target}"]`);
+    if (active) {
+        active.classList.remove('btn-outline');
+        active.classList.add('active', 'btn-primary');
+    }
+    const preset = categoryPresets[target] || categoryPresets[20];
+    document.getElementById('quick-breakdown').innerHTML = `
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#dbeafe; margin-right:3px;"></span>${preset.clients} Clients
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#d1fae5; margin-right:3px; margin-left:8px;"></span>${preset.referral} Referral Partners
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ede9fe; margin-right:3px; margin-left:8px;"></span>${preset.agency} Agency/Business
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f3f4f6; margin-right:3px; margin-left:8px;"></span>${preset.professional} Professional Network
+    `;
+}
+
+function startQuickSearch() {
+    const keywords = document.getElementById('quick-keywords').value.trim();
+    const location = document.getElementById('quick-location').value.trim();
+
+    if (!keywords) {
+        showToast('Enter search keywords', 'error');
+        return;
+    }
+
+    document.getElementById('quick-search-btn').disabled = true;
+    document.getElementById('quick-status').textContent = 'Searching Google...';
+
+    // Use different keyword variations per category to balance the results
+    const preset = categoryPresets[quickTarget] || categoryPresets[20];
+    const total = quickTarget;
+
+    const searchData = {
+        keywords: keywords,
+        location: location,
+        max_results: total,
+    };
+
+    apiPost('/xray/search-and-store', searchData).then(result => {
+        document.getElementById('quick-search-btn').disabled = false;
+
+        if (result && result.error) {
+            document.getElementById('quick-status').innerHTML = '<span style="color: var(--danger);">Error: ' + result.error + '</span>';
+            showToast('Search failed', 'error');
+            return;
+        }
+
+        if (result) {
+            document.getElementById('quick-status').innerHTML =
+                `<span style="color: var(--success);">Found ${result.found} profiles, stored ${result.stored}</span>` +
+                `<span style="margin-left: 12px; color: var(--gray-500);">→ Click "Find + Enrich" to score with Groq AI</span>`;
+            document.getElementById('quick-pipeline-btn').style.display = 'inline-block';
+            loadDashboard();
+            showToast(`Quick find: ${result.stored} profiles stored!`, 'success');
+        }
+    });
+}
+
+function startQuickPipeline() {
+    const keywords = document.getElementById('quick-keywords').value.trim();
+    const location = document.getElementById('quick-location').value.trim();
+
+    if (!keywords) {
+        showToast('Enter search keywords', 'error');
+        return;
+    }
+
+    document.getElementById('quick-search-btn').disabled = true;
+    document.getElementById('quick-pipeline-btn').disabled = true;
+    document.getElementById('quick-status').innerHTML = 'Running full pipeline... <span style="color: var(--gray-500);">(1-2 min)</span>';
+
+    const pipelineData = {
+        keywords: keywords,
+        location: location,
+        max_results: quickTarget,
+    };
+
+    apiPost('/xray/full-pipeline', pipelineData).then(result => {
+        document.getElementById('quick-search-btn').disabled = false;
+        document.getElementById('quick-pipeline-btn').disabled = false;
+
+        if (result && result.error) {
+            document.getElementById('quick-status').innerHTML = '<span style="color: var(--danger);">Error: ' + result.error + '</span>';
+            return;
+        }
+
+        if (result) {
+            const qualified = result.qualified_count || result.icp_filter?.qualified || 0;
+            const enriched = result.enriched_count || result.enrichment?.length || 0;
+            document.getElementById('quick-status').innerHTML =
+                `<span style="color: var(--success);">Done! ${result.stored} stored, ${qualified} qualified, ${enriched} enriched</span>`;
+            loadDashboard();
+            showToast(`Pipeline complete: ${qualified} qualified, ${enriched} enriched!`, 'success');
+        }
+    });
+}
 
 async function loadFindPage() {
     // Check AI status
