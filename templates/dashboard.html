@@ -749,14 +749,19 @@ tr:hover {
                     <h2 class="card-title" style="color: var(--primary);">Quick Find</h2>
                     <span style="font-size: 12px; color: var(--gray-500);">X-Ray Google Search + Groq AI</span>
                 </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Search Keywords (comma-separated)</label>
+                    <input class="form-input" id="quick-keywords" placeholder="e.g. landscaping, HVAC, plumbing, electrical contractor" value="landscaping, HVAC, plumbing">
+                    <div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;" id="quick-keyword-tags"></div>
+                </div>
                 <div class="form-row" style="margin-bottom: 12px;">
-                    <div class="form-group">
-                        <label class="form-label">Search Keywords</label>
-                        <input class="form-input" id="quick-keywords" placeholder="e.g. landscaping, HVAC, plumbing" value="landscaping owner">
-                    </div>
                     <div class="form-group">
                         <label class="form-label">Location</label>
                         <input class="form-input" id="quick-location" placeholder="e.g. Texas, Austin">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Title</label>
+                        <input class="form-input" id="quick-title" placeholder="e.g. owner, CEO, founder" value="owner">
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
@@ -1046,31 +1051,31 @@ tr:hover {
                     <h2 class="card-title">Search Criteria</h2>
                     <div id="ai-badge" style="font-size: 12px; padding: 4px 10px; border-radius: 12px; background: var(--gray-100); color: var(--gray-500);">Checking AI...</div>
                 </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="form-label">Search Keywords (comma-separated)</label>
+                    <input class="form-input" id="find-keywords" placeholder="e.g. landscaping, HVAC, plumbing, electrical contractor" value="landscaping">
+                    <div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;" id="find-keyword-tags"></div>
+                </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label class="form-label">Keywords *</label>
-                        <input class="form-input" id="find-keywords" placeholder="e.g. landscaping, HVAC, plumbing, contractor" value="landscaping">
-                    </div>
                     <div class="form-group">
                         <label class="form-label">Job Title</label>
                         <input class="form-input" id="find-title" placeholder="e.g. owner, CEO, founder" value="owner">
                     </div>
-                </div>
-                <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Location</label>
                         <input class="form-input" id="find-location" placeholder="e.g. Texas, Austin, Dallas">
                     </div>
+                </div>
+                <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Industry</label>
                         <input class="form-input" id="find-industry" placeholder="e.g. landscaping, construction">
                     </div>
-                </div>
-                <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">Company</label>
                         <input class="form-input" id="find-company" placeholder="Optional company name">
                     </div>
+                </div>
                     <div class="form-group">
                         <label class="form-label">How Many Profiles</label>
                         <div style="display: flex; gap: 8px; align-items: center;">
@@ -1926,25 +1931,27 @@ function setQuickTarget(target) {
 }
 
 function startQuickSearch() {
-    const keywords = document.getElementById('quick-keywords').value.trim();
+    const rawKeywords = document.getElementById('quick-keywords').value.trim();
     const location = document.getElementById('quick-location').value.trim();
+    const title = document.getElementById('quick-title')?.value.trim() || '';
 
-    if (!keywords) {
+    if (!rawKeywords) {
         showToast('Enter search keywords', 'error');
         return;
     }
 
-    document.getElementById('quick-search-btn').disabled = true;
-    document.getElementById('quick-status').textContent = 'Searching Google...';
+    // Parse comma-separated keywords
+    const allKeywords = rawKeywords.split(',').map(k => k.trim()).filter(k => k);
 
-    // Use different keyword variations per category to balance the results
-    const preset = categoryPresets[quickTarget] || categoryPresets[20];
-    const total = quickTarget;
+    document.getElementById('quick-search-btn').disabled = true;
+    document.getElementById('quick-status').textContent = `Searching Google for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`;
 
     const searchData = {
-        keywords: keywords,
+        keywords: rawKeywords,
+        all_keywords: allKeywords,
+        title: title,
         location: location,
-        max_results: total,
+        max_results: quickTarget,
     };
 
     apiPost('/xray/search-and-store', searchData).then(result => {
@@ -1968,20 +1975,25 @@ function startQuickSearch() {
 }
 
 function startQuickPipeline() {
-    const keywords = document.getElementById('quick-keywords').value.trim();
+    const rawKeywords = document.getElementById('quick-keywords').value.trim();
     const location = document.getElementById('quick-location').value.trim();
+    const title = document.getElementById('quick-title')?.value.trim() || '';
 
-    if (!keywords) {
+    if (!rawKeywords) {
         showToast('Enter search keywords', 'error');
         return;
     }
 
+    const allKeywords = rawKeywords.split(',').map(k => k.trim()).filter(k => k);
+
     document.getElementById('quick-search-btn').disabled = true;
     document.getElementById('quick-pipeline-btn').disabled = true;
-    document.getElementById('quick-status').innerHTML = 'Running full pipeline... <span style="color: var(--gray-500);">(1-2 min)</span>';
+    document.getElementById('quick-status').innerHTML = `Running full pipeline for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}... <span style="color: var(--gray-500);">(1-2 min)</span>`;
 
     const pipelineData = {
-        keywords: keywords,
+        keywords: rawKeywords,
+        all_keywords: allKeywords,
+        title: title,
         location: location,
         max_results: quickTarget,
     };
@@ -2023,25 +2035,27 @@ async function loadFindPage() {
 }
 
 function startFindSearch() {
-    const keywords = document.getElementById('find-keywords').value.trim();
+    const rawKeywords = document.getElementById('find-keywords').value.trim();
     const title = document.getElementById('find-title').value.trim();
     const location = document.getElementById('find-location').value.trim();
     const industry = document.getElementById('find-industry').value.trim();
     const company = document.getElementById('find-company').value.trim();
     const quantity = parseInt(document.getElementById('find-quantity').value) || 20;
 
-    if (!keywords && !title) {
+    if (!rawKeywords && !title) {
         showToast('Enter keywords or title to search', 'error');
         return;
     }
 
+    const allKeywords = rawKeywords ? rawKeywords.split(',').map(k => k.trim()).filter(k => k) : [];
+
     // Show loading
     document.getElementById('find-search-btn').disabled = true;
     document.getElementById('find-spinner').style.display = 'inline-block';
-    document.getElementById('find-status').textContent = 'Searching Google for LinkedIn profiles...';
+    document.getElementById('find-status').textContent = `Searching Google for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`;
     document.getElementById('find-results').innerHTML = '';
 
-    const searchData = { keywords, title, location, industry, company, max_results: quantity };
+    const searchData = { keywords: rawKeywords, all_keywords: allKeywords, title, location, industry, company, max_results: quantity };
 
     apiPost('/xray/search-and-store', searchData).then(result => {
         document.getElementById('find-search-btn').disabled = false;
@@ -2073,26 +2087,28 @@ function startFindSearch() {
 }
 
 function startFullPipeline() {
-    const keywords = document.getElementById('find-keywords').value.trim();
+    const rawKeywords = document.getElementById('find-keywords').value.trim();
     const title = document.getElementById('find-title').value.trim();
     const location = document.getElementById('find-location').value.trim();
     const industry = document.getElementById('find-industry').value.trim();
     const company = document.getElementById('find-company').value.trim();
     const quantity = parseInt(document.getElementById('find-quantity').value) || 20;
 
-    if (!keywords && !title) {
+    if (!rawKeywords && !title) {
         showToast('Enter keywords or title to search', 'error');
         return;
     }
+
+    const allKeywords = rawKeywords ? rawKeywords.split(',').map(k => k.trim()).filter(k => k) : [];
 
     // Show loading
     document.getElementById('find-pipeline-btn').disabled = true;
     document.getElementById('find-search-btn').disabled = true;
     document.getElementById('find-spinner').style.display = 'inline-block';
-    document.getElementById('find-status').textContent = 'Running full pipeline: Google search -> Scrape -> ICP filter -> Enrich...';
+    document.getElementById('find-status').textContent = `Running full pipeline for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`;
     document.getElementById('find-results').innerHTML = '<div style="text-align:center; padding: 40px; color: var(--gray-500);"><div class="spinner" style="margin: 0 auto 16px;"></div><p>This may take 1-2 minutes depending on quantity...</p></div>';
 
-    const pipelineData = { keywords, title, location, industry, company, max_results: quantity };
+    const pipelineData = { keywords: rawKeywords, all_keywords: allKeywords, title, location, industry, company, max_results: quantity };
 
     apiPost('/xray/full-pipeline', pipelineData).then(result => {
         document.getElementById('find-pipeline-btn').disabled = false;
@@ -2157,6 +2173,7 @@ function renderFindResults(profiles) {
                 </div>
                 <div style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">
                     ${escHtml(p.location || '')} ${p.industry ? ' • ' + escHtml(p.industry) : ''}
+                    ${p.search_keyword ? `<span style="display:inline-block; padding: 1px 6px; background: var(--primary-light); color: var(--primary); border-radius: 8px; margin-left: 4px; font-size: 11px;">${escHtml(p.search_keyword)}</span>` : ''}
                 </div>
                 ${p.bio ? `<div style="font-size: 12px; color: var(--gray-700); margin-top: 8px; line-height: 1.4;">${escHtml(p.bio).substring(0, 150)}...</div>` : ''}
                 ${p.linkedin_url ? `<a href="${escHtml(p.linkedin_url)}" target="_blank" style="display: inline-block; margin-top: 8px; font-size: 12px; color: var(--primary);">View LinkedIn Profile →</a>` : ''}

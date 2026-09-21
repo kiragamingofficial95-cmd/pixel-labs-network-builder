@@ -54,14 +54,22 @@ class XRaySearcher:
         industry: str = "",
         max_results: int = 25,
         pages_to_search: int = 3,
+        all_keywords: list = None,
     ) -> dict:
         """Search Google for LinkedIn profiles using X-Ray technique.
 
-        Builds a Google query like:
-          site:linkedin.com/in/ "landscaping" "owner" "Texas"
+        Supports multi-keyword search:
+        - keywords="landscaping" -> single search
+        - all_keywords=["landscaping", "HVAC", "plumbing"] -> separate searches per keyword
 
-        Returns list of LinkedIn profile URLs with extracted info.
+        Builds Google queries like:
+          site:linkedin.com/in/ "landscaping" "owner" "Texas"
         """
+        # If multiple keywords, run separate searches
+        if all_keywords and len(all_keywords) > 1:
+            return await self._search_multi_keyword(all_keywords, title, company, location, industry, max_results, pages_to_search)
+
+        # Single keyword search
         query = self._build_xray_query(keywords, title, company, location, industry)
         all_profiles = []
         start = 0
@@ -108,6 +116,71 @@ class XRaySearcher:
         return {
             "success": True,
             "query": query,
+            "total": len(unique),
+            "profiles": unique[:max_results],
+        }
+
+    async def _search_multi_keyword(
+        self, keywords_list: list, title: str, company: str,
+        location: str, industry: str, max_results: int, pages_to_search: int,
+    ) -> dict:
+        """Run separate Google searches for each keyword, combine and deduplicate.
+
+        Distributes max_results evenly across keywords.
+        Example: 3 keywords, 30 total -> 10 per keyword
+        """
+        per_keyword = max(1, max_results // len(keywords_list))
+        all_profiles = []
+        queries_used = []
+
+        for kw in keywords_list:
+            kw = kw.strip()
+            if not kw:
+                continue
+
+            query = self._build_xray_query(kw, title, company, location, industry)
+            queries_used.append(query)
+
+            for page_num in range(min(pages_to_search, 2)):  # Fewer pages per keyword
+                start = page_num * 10
+                google_url = f"https://www.google.com/search?q={quote_plus(query)}&start={start}"
+
+                try:
+                    await self.page.goto(google_url, wait_until="domcontentloaded")
+                    await asyncio.sleep(2 + random.uniform(1, 3))
+
+                    await self._handle_google_consent()
+                    results = await self._extract_google_results()
+
+                    for r in results:
+                        url = r.get("url", "")
+                        if "linkedin.com/in/" in url:
+                            profile = self._parse_xray_result(r)
+                            if profile.get("name"):
+                                profile["search_keyword"] = kw
+                                all_profiles.append(profile)
+
+                    if page_num < pages_to_search - 1:
+                        await asyncio.sleep(3 + random.uniform(2, 4))
+
+                except Exception:
+                    continue
+
+        # Deduplicate by URL
+        seen = set()
+        unique = []
+        for p in all_profiles:
+            url = p.get("linkedin_url", "")
+            if url and url not in seen:
+                seen.add(url)
+                unique.append(p)
+            elif not url:
+                unique.append(p)
+
+        return {
+            "success": True,
+            "query": " | ".join(queries_used),
+            "keywords_searched": keywords_list,
             "total": len(unique),
             "profiles": unique[:max_results],
         }

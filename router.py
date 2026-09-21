@@ -916,14 +916,26 @@ async def scrape_and_enrich(data: dict):
 async def xray_search(data: dict):
     """Search Google for LinkedIn profiles using X-Ray technique.
 
-    No LinkedIn login needed. Uses Google search:
-      site:linkedin.com/in/ "landscaping" "owner" "Texas"
+    Supports multi-keyword search:
+    - keywords="landscaping" -> single search
+    - all_keywords=["landscaping", "HVAC", "plumbing"] -> separate searches per keyword
     """
     from xray_search import xray
 
+    # Parse keywords - support both single and multi
+    keywords = data.get("keywords", "")
+    all_keywords = data.get("all_keywords", [])
+
+    # If keywords string contains commas, split into list
+    if keywords and "," in keywords:
+        all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    elif keywords and not all_keywords:
+        all_keywords = [keywords]
+
     await xray.start()
     result = await xray.search_xray(
-        keywords=data.get("keywords", ""),
+        keywords=keywords,
+        all_keywords=all_keywords if len(all_keywords) > 1 else None,
         title=data.get("title", ""),
         company=data.get("company", ""),
         location=data.get("location", ""),
@@ -950,11 +962,18 @@ async def xray_scrape_profile(data: dict):
 
 @router.post("/xray/search-and-store")
 async def xray_search_and_store(data: dict):
-    """X-Ray Google search -> scrape profiles -> store in DB."""
+    """X-Ray Google search -> scrape profiles -> store in DB. Supports multi-keyword."""
     from xray_search import xray
     from database import get_connection
 
     keywords = data.get("keywords", "")
+    all_keywords = data.get("all_keywords", [])
+
+    if keywords and "," in keywords:
+        all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    elif keywords and not all_keywords:
+        all_keywords = [keywords]
+
     title = data.get("title", "")
     company = data.get("company", "")
     location = data.get("location", "")
@@ -964,7 +983,9 @@ async def xray_search_and_store(data: dict):
     # Step 1: X-Ray search Google
     await xray.start()
     search_result = await xray.search_xray(
-        keywords=keywords, title=title, company=company,
+        keywords=keywords,
+        all_keywords=all_keywords if len(all_keywords) > 1 else None,
+        title=title, company=company,
         location=location, industry=industry,
         max_results=max_results, pages_to_search=2,
     )
@@ -1026,13 +1047,20 @@ async def xray_search_and_store(data: dict):
 
 @router.post("/xray/full-pipeline")
 async def xray_full_pipeline(data: dict):
-    """Full pipeline: X-Ray search -> scrape -> store -> ICP filter -> enrich via Groq."""
+    """Full pipeline: X-Ray search -> scrape -> store -> ICP filter -> enrich via Groq. Supports multi-keyword."""
     from xray_search import xray
     from database import get_connection
     from icp_profile import get_active_icp
     from ai_client import ai_client
 
     keywords = data.get("keywords", "")
+    all_keywords = data.get("all_keywords", [])
+
+    if keywords and "," in keywords:
+        all_keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+    elif keywords and not all_keywords:
+        all_keywords = [keywords]
+
     title = data.get("title", "")
     company = data.get("company", "")
     location = data.get("location", "")
@@ -1046,7 +1074,9 @@ async def xray_full_pipeline(data: dict):
     # Step 1: X-Ray search
     await xray.start()
     search_result = await xray.search_xray(
-        keywords=keywords, title=title, company=company,
+        keywords=keywords,
+        all_keywords=all_keywords if len(all_keywords) > 1 else None,
+        title=title, company=company,
         location=location, industry=industry,
         max_results=max_results, pages_to_search=2,
     )
