@@ -9,5 +9,9 @@
     "install": "pip install -r requirements.txt"
   },
   "keywords": ["linkedin", "networking", "fastapi", "pixel-labs", "crm"],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@vercel/python": "^3.0.0"
+  }
 }
