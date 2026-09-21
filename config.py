@@ -31,13 +31,18 @@ else:
     AI_MODEL = OPENAI_MODEL
 
 # Application Settings
-APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
-APP_PORT = int(os.getenv("APP_PORT", "8000"))
+APP_HOST = os.getenv("APP_HOST", "0.0.0.0")  # 0.0.0.0 for Docker/Railway
+APP_PORT = int(os.getenv("PORT", os.getenv("APP_PORT", "8000")))
 SECRET_KEY = os.getenv("SECRET_KEY", "pixel-labs-secret-key-change-me")
 
-# Database - use /tmp on Vercel/serverless, local data folder otherwise
+# Database - use /tmp on Vercel, /app/data on Railway, local data folder otherwise
 if os.getenv("VERCEL"):
     DATABASE_URL = "/tmp/pixel_labs.db"
+elif os.getenv("RAILWAY_STATIC_URL") or os.getenv("RAILWAY_PROJECT_ID"):
+    # Railway - use persistent volume or /app/data
+    data_dir = os.getenv("DATA_DIR", "/app/data")
+    os.makedirs(data_dir, exist_ok=True)
+    DATABASE_URL = os.path.join(data_dir, "pixel_labs.db")
 else:
     DATABASE_URL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pixel_labs.db")
 
