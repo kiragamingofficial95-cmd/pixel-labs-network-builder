@@ -963,7 +963,6 @@ async def xray_search(data: dict):
         elif keywords and not all_keywords:
             all_keywords = [keywords]
 
-        await xray.start()
         result = await xray.search_xray(
             keywords=keywords,
             all_keywords=all_keywords if len(all_keywords) > 1 else None,
@@ -974,7 +973,6 @@ async def xray_search(data: dict):
             max_results=data.get("max_results", 25),
             pages_to_search=data.get("pages_to_search", 3),
         )
-        await xray.stop()
         return result
     except Exception as e:
         return {"error": str(e)[:500], "profiles": [], "total": 0}
@@ -988,9 +986,7 @@ async def xray_scrape_profile(data: dict):
         url = data.get("url", "")
         if not url:
             return {"error": "LinkedIn URL required"}
-        await xray.start()
         result = await xray.scrape_public_profile(url)
-        await xray.stop()
         return result
     except Exception as e:
         return {"error": str(e)[:500]}
@@ -1021,9 +1017,8 @@ async def xray_search_and_store(data: dict):
     max_results = data.get("max_results", 10)
 
     try:
-        # Step 1: X-Ray search Google
-        _search_progress[job_id].update({"status": "searching", "step": "Searching Google for LinkedIn profiles..."})
-        await xray.start()
+        # Step 1: X-Ray search (DDG primary, Google fallback)
+        _search_progress[job_id].update({"status": "searching", "step": "Searching for LinkedIn profiles..."})
         search_result = await xray.search_xray(
             keywords=keywords,
             all_keywords=all_keywords if len(all_keywords) > 1 else None,
@@ -1032,7 +1027,7 @@ async def xray_search_and_store(data: dict):
             max_results=max_results, pages_to_search=2,
         )
         profiles = search_result.get("profiles", [])
-        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles on Google", "found": len(profiles)})
+        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles", "found": len(profiles)})
 
         # Step 2: Scrape each public profile
         enriched_profiles = []
@@ -1058,8 +1053,7 @@ async def xray_search_and_store(data: dict):
                         enriched_profiles.append(p)
                 except Exception:
                     enriched_profiles.append(p)
-                await asyncio.sleep(2 + random.uniform(1, 3))
-        await xray.stop()
+                await asyncio.sleep(1 + random.uniform(0.5, 1.5))
 
         _search_progress[job_id].update({"status": "storing", "step": f"Storing {len(enriched_profiles)} profiles in database...", "scraped": len(enriched_profiles)})
 
@@ -1144,9 +1138,8 @@ async def xray_full_pipeline(data: dict):
         return {"error": "At least keywords or title required"}
 
     try:
-        # Step 1: X-Ray search
-        _search_progress[job_id].update({"status": "searching", "step": "Searching Google for LinkedIn profiles..."})
-        await xray.start()
+        # Step 1: X-Ray search (DDG primary, Google fallback)
+        _search_progress[job_id].update({"status": "searching", "step": "Searching for LinkedIn profiles..."})
         search_result = await xray.search_xray(
             keywords=keywords,
             all_keywords=all_keywords if len(all_keywords) > 1 else None,
@@ -1155,7 +1148,7 @@ async def xray_full_pipeline(data: dict):
             max_results=max_results, pages_to_search=2,
         )
         profiles = search_result.get("profiles", [])
-        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles on Google", "found": len(profiles)})
+        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles", "found": len(profiles)})
 
         # Step 2: Scrape each profile
         detailed_profiles = []
@@ -1181,8 +1174,7 @@ async def xray_full_pipeline(data: dict):
                         detailed_profiles.append(p)
                 except Exception:
                     detailed_profiles.append(p)
-                await asyncio.sleep(2 + random.uniform(1, 3))
-        await xray.stop()
+                await asyncio.sleep(1 + random.uniform(0.5, 1.5))
 
         if not detailed_profiles:
             _search_progress[job_id].update({"status": "done", "step": "No profiles found"})
