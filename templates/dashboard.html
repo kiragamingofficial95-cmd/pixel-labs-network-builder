@@ -707,6 +707,7 @@ tr:hover {
         <div class="nav-brand">Pixel Labs <span>Network Builder</span></div>
         <div class="nav-links">
             <a class="nav-link active" onclick="showPage('dashboard')">Dashboard</a>
+            <a class="nav-link" onclick="showPage('find')">Find</a>
             <a class="nav-link" onclick="showPage('import')">Import</a>
             <a class="nav-link" onclick="showPage('queue')">Queue</a>
             <a class="nav-link" onclick="showPage('history')">History</a>
@@ -988,6 +989,93 @@ tr:hover {
                 </div>
             </div>
         </div>
+
+        <!-- Find Page - X-Ray Search + Groq Enrichment -->
+        <div id="page-find" class="page" style="display:none;">
+            <div class="section-header">
+                <h1 class="section-title">Find Prospects</h1>
+                <p style="color: var(--gray-500); font-size: 14px;">Search Google for LinkedIn profiles, score with Groq AI, enrich qualified ones</p>
+            </div>
+
+            <!-- Search Form -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Search Criteria</h2>
+                    <div id="ai-badge" style="font-size: 12px; padding: 4px 10px; border-radius: 12px; background: var(--gray-100); color: var(--gray-500);">Checking AI...</div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Keywords *</label>
+                        <input class="form-input" id="find-keywords" placeholder="e.g. landscaping, HVAC, plumbing, contractor" value="landscaping">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Job Title</label>
+                        <input class="form-input" id="find-title" placeholder="e.g. owner, CEO, founder" value="owner">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input class="form-input" id="find-location" placeholder="e.g. Texas, Austin, Dallas">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Industry</label>
+                        <input class="form-input" id="find-industry" placeholder="e.g. landscaping, construction">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Company</label>
+                        <input class="form-input" id="find-company" placeholder="Optional company name">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">How Many Profiles</label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <input class="form-input" id="find-quantity" type="number" min="5" max="100" value="20" style="width: 100px;">
+                            <span style="color: var(--gray-500); font-size: 13px;">profiles</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 16px; align-items: center;">
+                    <button class="btn btn-primary" id="find-search-btn" onclick="startFindSearch()">
+                        Search Google & Find Profiles
+                    </button>
+                    <button class="btn btn-success" id="find-pipeline-btn" onclick="startFullPipeline()" style="display: none;">
+                        Full Pipeline (Search + ICP + Enrich)
+                    </button>
+                    <div id="find-spinner" style="display: none;">
+                        <div class="spinner"></div>
+                    </div>
+                    <span id="find-status" style="color: var(--gray-500); font-size: 13px;"></span>
+                </div>
+            </div>
+
+            <!-- Results Summary -->
+            <div id="find-results-summary" style="display: none;">
+                <div class="grid-4" style="margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <div class="stat-value" id="find-found">0</div>
+                        <div class="stat-label">Found on Google</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="find-scraped">0</div>
+                        <div class="stat-label">Profiles Scraped</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="find-qualified">0</div>
+                        <div class="stat-label">ICP Qualified</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="find-enriched">0</div>
+                        <div class="stat-label">Enriched</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile Results -->
+            <div id="find-results"></div>
+        </div>
+
     </div>
 
     <div class="toast-container" id="toast-container"></div>
@@ -1012,7 +1100,7 @@ function showPage(page) {
 
     const links = document.querySelectorAll('.nav-link');
     links.forEach(link => {
-        if (link.textContent.toLowerCase().includes(page === 'dashboard' ? 'dashboard' : page === 'import' ? 'import' : page === 'queue' ? 'queue' : page === 'history' ? 'history' : 'settings')) {
+        if (link.textContent.toLowerCase().includes(page === 'dashboard' ? 'dashboard' : page === 'find' ? 'find' : page === 'import' ? 'import' : page === 'queue' ? 'queue' : page === 'history' ? 'history' : 'settings')) {
             link.classList.add('active');
         }
     });
@@ -1022,6 +1110,7 @@ function showPage(page) {
     if (page === 'import') {}
     if (page === 'history') loadHistory();
     if (page === 'settings') loadSettings();
+    if (page === 'find') loadFindPage();
 }
 
 // ======== TOAST ========
@@ -1757,6 +1846,283 @@ document.getElementById('person-modal')?.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
 });
+
+// ======== FIND PAGE - X-RAY SEARCH ========
+let findSearchData = null;
+
+async function loadFindPage() {
+    // Check AI status
+    const ai = await apiGet('/ai/status');
+    const badge = document.getElementById('ai-badge');
+    if (ai && ai.available) {
+        badge.textContent = 'Groq AI Ready';
+        badge.style.background = '#d1fae5';
+        badge.style.color = '#059669';
+        document.getElementById('find-pipeline-btn').style.display = 'inline-block';
+    } else {
+        badge.textContent = 'AI Not Configured';
+        badge.style.background = '#fee2e2';
+        badge.style.color = '#dc2626';
+    }
+}
+
+function startFindSearch() {
+    const keywords = document.getElementById('find-keywords').value.trim();
+    const title = document.getElementById('find-title').value.trim();
+    const location = document.getElementById('find-location').value.trim();
+    const industry = document.getElementById('find-industry').value.trim();
+    const company = document.getElementById('find-company').value.trim();
+    const quantity = parseInt(document.getElementById('find-quantity').value) || 20;
+
+    if (!keywords && !title) {
+        showToast('Enter keywords or title to search', 'error');
+        return;
+    }
+
+    // Show loading
+    document.getElementById('find-search-btn').disabled = true;
+    document.getElementById('find-spinner').style.display = 'inline-block';
+    document.getElementById('find-status').textContent = 'Searching Google for LinkedIn profiles...';
+    document.getElementById('find-results').innerHTML = '';
+
+    const searchData = { keywords, title, location, industry, company, max_results: quantity };
+
+    apiPost('/xray/search-and-store', searchData).then(result => {
+        document.getElementById('find-search-btn').disabled = false;
+        document.getElementById('find-spinner').style.display = 'none';
+
+        if (result && result.error) {
+            document.getElementById('find-status').textContent = 'Error: ' + result.error;
+            showToast('Search failed: ' + result.error, 'error');
+            return;
+        }
+
+        if (result) {
+            findSearchData = result;
+            document.getElementById('find-status').textContent = `Found ${result.found} profiles, stored ${result.stored}`;
+
+            // Show summary
+            document.getElementById('find-results-summary').style.display = 'block';
+            document.getElementById('find-found').textContent = result.found || 0;
+            document.getElementById('find-scraped').textContent = result.scraped_details || result.stored || 0;
+            document.getElementById('find-qualified').textContent = '?';
+            document.getElementById('find-enriched').textContent = '?';
+
+            // Show profiles
+            renderFindResults(result.profiles || []);
+
+            showToast(`Found and stored ${result.stored} profiles!`, 'success');
+        }
+    });
+}
+
+function startFullPipeline() {
+    const keywords = document.getElementById('find-keywords').value.trim();
+    const title = document.getElementById('find-title').value.trim();
+    const location = document.getElementById('find-location').value.trim();
+    const industry = document.getElementById('find-industry').value.trim();
+    const company = document.getElementById('find-company').value.trim();
+    const quantity = parseInt(document.getElementById('find-quantity').value) || 20;
+
+    if (!keywords && !title) {
+        showToast('Enter keywords or title to search', 'error');
+        return;
+    }
+
+    // Show loading
+    document.getElementById('find-pipeline-btn').disabled = true;
+    document.getElementById('find-search-btn').disabled = true;
+    document.getElementById('find-spinner').style.display = 'inline-block';
+    document.getElementById('find-status').textContent = 'Running full pipeline: Google search -> Scrape -> ICP filter -> Enrich...';
+    document.getElementById('find-results').innerHTML = '<div style="text-align:center; padding: 40px; color: var(--gray-500);"><div class="spinner" style="margin: 0 auto 16px;"></div><p>This may take 1-2 minutes depending on quantity...</p></div>';
+
+    const pipelineData = { keywords, title, location, industry, company, max_results: quantity };
+
+    apiPost('/xray/full-pipeline', pipelineData).then(result => {
+        document.getElementById('find-pipeline-btn').disabled = false;
+        document.getElementById('find-search-btn').disabled = false;
+        document.getElementById('find-spinner').style.display = 'none';
+
+        if (result && result.error) {
+            document.getElementById('find-status').textContent = 'Error: ' + result.error;
+            showToast('Pipeline failed: ' + result.error, 'error');
+            document.getElementById('find-results').innerHTML = '';
+            return;
+        }
+
+        if (result) {
+            findSearchData = result;
+
+            const qualified = result.qualified_count || result.icp_filter?.qualified || 0;
+            const enriched = result.enriched_count || result.enrichment?.length || 0;
+
+            document.getElementById('find-status').textContent = `Done! ${result.stored} stored, ${qualified} qualified, ${enriched} enriched`;
+
+            // Show summary
+            document.getElementById('find-results-summary').style.display = 'block';
+            document.getElementById('find-found').textContent = result.found || 0;
+            document.getElementById('find-scraped').textContent = result.stored || 0;
+            document.getElementById('find-qualified').textContent = qualified;
+            document.getElementById('find-enriched').textContent = enriched;
+
+            // Show enriched profiles with AI data
+            renderPipelineResults(result);
+
+            showToast(`Pipeline complete: ${qualified} qualified, ${enriched} enriched!`, 'success');
+        }
+    });
+}
+
+function renderFindResults(profiles) {
+    const container = document.getElementById('find-results');
+    if (!profiles.length) {
+        container.innerHTML = '<div class="card"><div class="empty-state"><p>No profiles found. Try different search terms.</p></div></div>';
+        return;
+    }
+
+    let html = '<div class="card"><div class="card-header"><h2 class="card-title">Found Profiles</h2></div>';
+    html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px;">';
+
+    profiles.forEach(p => {
+        const score = p.icp_score || 0;
+        const scoreColor = score >= 70 ? 'var(--success)' : score >= 40 ? 'var(--warning)' : 'var(--gray-500)';
+        html += `
+            <div style="border: 1px solid var(--gray-200); border-radius: 10px; padding: 16px; background: white;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <div style="font-weight: 600; font-size: 15px;">${escHtml(p.name || 'Unknown')}</div>
+                        <div style="color: var(--gray-700); font-size: 13px;">${escHtml(p.job_title || '')}</div>
+                        <div style="color: var(--gray-500); font-size: 13px;">${escHtml(p.company || '')}</div>
+                    </div>
+                    ${score ? `<div style="text-align: center;">
+                        <div style="font-size: 24px; font-weight: 700; color: ${scoreColor};">${score}</div>
+                        <div style="font-size: 10px; color: var(--gray-500);">ICP Score</div>
+                    </div>` : ''}
+                </div>
+                <div style="font-size: 12px; color: var(--gray-500); margin-top: 8px;">
+                    ${escHtml(p.location || '')} ${p.industry ? ' • ' + escHtml(p.industry) : ''}
+                </div>
+                ${p.bio ? `<div style="font-size: 12px; color: var(--gray-700); margin-top: 8px; line-height: 1.4;">${escHtml(p.bio).substring(0, 150)}...</div>` : ''}
+                ${p.linkedin_url ? `<a href="${escHtml(p.linkedin_url)}" target="_blank" style="display: inline-block; margin-top: 8px; font-size: 12px; color: var(--primary);">View LinkedIn Profile →</a>` : ''}
+            </div>
+        `;
+    });
+
+    html += '</div></div>';
+    container.innerHTML = html;
+}
+
+function renderPipelineResults(result) {
+    const container = document.getElementById('find-results');
+    let html = '';
+
+    // Show ICP filter results
+    const filterResults = result.icp_filter?.filtered || [];
+    const enrichmentResults = result.enrichment || [];
+
+    if (filterResults.length) {
+        html += '<div class="card"><div class="card-header"><h2 class="card-title">ICP Filter Results (Groq AI)</h2></div>';
+        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px;">';
+
+        filterResults.forEach(r => {
+            const score = r.icp_score || 0;
+            const scoreColor = score >= 70 ? 'var(--success)' : score >= 40 ? 'var(--warning)' : 'var(--gray-500)';
+            const meets = r.meets_icp;
+            const quality = r.data_quality || 'unknown';
+
+            // Find enrichment for this profile
+            const enrich = enrichmentResults.find(e => e.name === r.name);
+
+            html += `
+                <div style="border: 1px solid ${meets ? 'var(--success)' : 'var(--gray-200)'}; border-radius: 10px; padding: 16px; background: ${meets ? '#f0fdf4' : 'white'};">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 15px;">${escHtml(r.name || 'Unknown')}</div>
+                            <div style="font-size: 12px; padding: 2px 8px; border-radius: 10px; display: inline-block; margin-top: 4px; background: ${quality === 'rich' ? '#d1fae5' : quality === 'moderate' ? '#fef3c7' : '#fee2e2'}; color: ${quality === 'rich' ? '#059669' : quality === 'moderate' ? '#d97706' : '#dc2626'};">${quality} data</div>
+                            ${r.decision_maker ? '<span style="font-size: 11px; padding: 2px 6px; background: #dbeafe; color: #2563eb; border-radius: 8px; margin-left: 4px;">Decision Maker</span>' : ''}
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 28px; font-weight: 700; color: ${scoreColor};">${score}</div>
+                            <div style="font-size: 10px; color: var(--gray-500);">${meets ? 'QUALIFIED' : 'NOT A FIT'}</div>
+                        </div>
+                    </div>
+                    <div style="font-size: 12px; color: var(--gray-700); margin-top: 8px; line-height: 1.4;">
+                        <strong>Why:</strong> ${escHtml(r.reason || '')}
+                    </div>
+                    ${r.pain_signals && r.pain_signals.length ? `
+                        <div style="margin-top: 8px;">
+                            <div style="font-size: 11px; font-weight: 600; color: var(--gray-500);">PAIN SIGNALS:</div>
+                            ${r.pain_signals.map(p => `<div style="font-size: 12px; color: var(--danger);">• ${escHtml(p)}</div>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${r.business_type ? `<div style="font-size: 11px; color: var(--gray-500); margin-top: 6px;">Type: ${r.business_type} | Referral: ${r.referral_potential || 'unknown'}</div>` : ''}
+                </div>
+            `;
+        });
+
+        html += '</div></div>';
+    }
+
+    // Show enrichment results
+    if (enrichmentResults.length) {
+        html += '<div class="card" style="margin-top: 20px;"><div class="card-header"><h2 class="card-title">Enrichment Details (Groq AI)</h2></div>';
+        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px;">';
+
+        enrichmentResults.filter(e => e.enriched).forEach(e => {
+            const biz = e.business_analysis || {};
+            const fit = e.pixel_labs_fit || {};
+            const pain = e.pain_points || [];
+            const outreach = e.outreach_strategy || {};
+            const digital = e.digital_presence_analysis || {};
+
+            html += `
+                <div style="border: 1px solid var(--gray-200); border-radius: 10px; padding: 16px; background: white;">
+                    <div style="font-weight: 600; font-size: 15px;">${escHtml(e.name || '')} — ${escHtml(e.company || '')}</div>
+
+                    <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                        <div style="font-size: 12px;"><strong>Business:</strong> ${biz.type || 'unknown'}</div>
+                        <div style="font-size: 12px;"><strong>Size:</strong> ${biz.estimated_size || 'unknown'}</div>
+                        <div style="font-size: 12px;"><strong>Revenue:</strong> ${biz.estimated_revenue || 'unknown'}</div>
+                        <div style="font-size: 12px;"><strong>Years:</strong> ${biz.years_in_business || 'unknown'}</div>
+                    </div>
+
+                    <div style="margin-top: 10px; padding: 8px; background: var(--gray-50); border-radius: 6px;">
+                        <div style="font-size: 11px; font-weight: 600; color: var(--gray-500);">PIXEL LABS FIT: ${fit.score || '?'}%</div>
+                        <div style="font-size: 12px; color: var(--gray-700);">${escHtml(fit.why || '')}</div>
+                        <div style="font-size: 11px; color: var(--gray-500); margin-top: 4px;">Best service: ${fit.best_service || 'unknown'} | Budget: ${fit.estimated_budget || 'unknown'}</div>
+                    </div>
+
+                    ${pain.length ? `
+                        <div style="margin-top: 8px;">
+                            <div style="font-size: 11px; font-weight: 600; color: var(--gray-500);">PAIN POINTS:</div>
+                            ${pain.map(p => `<div style="font-size: 12px; color: var(--danger);">• ${escHtml(p)}</div>`).join('')}
+                        </div>
+                    ` : ''}
+
+                    ${outreach.angle ? `
+                        <div style="margin-top: 8px; padding: 8px; background: #eff6ff; border-radius: 6px;">
+                            <div style="font-size: 11px; font-weight: 600; color: var(--primary);">OUTREACH STRATEGY:</div>
+                            <div style="font-size: 12px; color: var(--gray-700);">${escHtml(outreach.angle)}</div>
+                            <div style="font-size: 11px; color: var(--gray-500); margin-top: 4px;">Channel: ${outreach.best_channel || 'linkedin_dm'} | Personalization: ${escHtml(outreach.personalization || '')}</div>
+                        </div>
+                    ` : ''}
+
+                    <div style="margin-top: 8px; font-size: 11px; color: var(--gray-500);">
+                        Digital: Website ${digital.likely_has_website ? 'likely' : 'unknown'} | SEO ${digital.seo_awareness || 'unknown'} | Social ${digital.social_media_presence || 'unknown'}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += '</div></div>';
+    }
+
+    if (!html) {
+        html = '<div class="card"><div class="empty-state"><p>No results. Check your search criteria and try again.</p></div></div>';
+    }
+
+    container.innerHTML = html;
+}
 </script>
 </body>
 </html>
