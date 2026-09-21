@@ -35,14 +35,16 @@ app.add_middleware(
 # Include API routes
 app.include_router(api_router, prefix="/api")
 
-# Serve static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Serve static files with absolute path
+import os
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-
+# Serve index.html for root
 @app.get("/")
 def root():
     """Serve the main dashboard."""
-    return FileResponse("templates/dashboard.html")
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "dashboard.html"))
 
 
 @app.get("/import")
