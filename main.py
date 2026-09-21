@@ -50,6 +50,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include API routes BEFORE page routes
 app.include_router(api_router, prefix="/api")
 
+# Health check endpoint (Railway needs this)
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
 # Serve static files
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
