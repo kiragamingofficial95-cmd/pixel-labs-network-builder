@@ -510,3 +510,63 @@ def ai_status():
         "model": ai_client.model,
         "base_url": AI_BASE_URL,
     }
+
+
+# ============== LINKEDIN HELPERS ==============
+
+@router.post("/linkedin/import-csv")
+def import_linkedin_csv(data: dict):
+    """Import LinkedIn connections from CSV export.
+
+    LinkedIn allows exporting connections via:
+    Settings > Data Privacy > Get a copy of your data > Connections
+
+    Pass the CSV content as { "csv_content": "..." }
+    """
+    from linkedin_helper import import_linkedin_connections_csv
+
+    csv_content = data.get("csv_content", "")
+    if not csv_content:
+        return {"error": "No CSV content provided"}
+
+    return import_linkedin_connections_csv(csv_content)
+
+
+@router.post("/linkedin/import-json")
+def import_linkedin_json(data: dict):
+    """Import LinkedIn profiles from JSON data.
+
+    Pass an array of profile objects as { "profiles": [...] }
+    """
+    from linkedin_helper import import_linkedin_profiles_json
+
+    profiles = data.get("profiles", [])
+    if not profiles:
+        return {"error": "No profiles provided"}
+
+    return import_linkedin_profiles_json(profiles)
+
+
+@router.get("/linkedin/search")
+def search_profiles(
+    query: str = "",
+    industry: str = "",
+    title: str = "",
+    location: str = "",
+    min_icp_score: int = 0,
+    use_ai: bool = True,
+):
+    """Search imported profiles with optional AI filtering.
+
+    This searches the LOCAL database of already-imported profiles.
+    It does NOT scrape LinkedIn.
+    """
+    from linkedin_helper import search_and_filter_profiles
+    return search_and_filter_profiles(query, industry, title, location, min_icp_score, use_ai)
+
+
+@router.post("/linkedin/enrich/{profile_id}")
+def enrich_linkedin_profile(profile_id: int):
+    """Enrich a single profile with AI-generated insights."""
+    from linkedin_helper import enrich_single_profile
+    return enrich_single_profile(profile_id)
