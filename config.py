@@ -14,8 +14,11 @@ APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
 SECRET_KEY = os.getenv("SECRET_KEY", "pixel-labs-secret-key-change-me")
 
-# Database
-DATABASE_URL = os.getenv("DATABASE_URL", "data/pixel_labs.db")
+# Database - use /tmp on Vercel/serverless, local data folder otherwise
+if os.getenv("VERCEL"):
+    DATABASE_URL = "/tmp/pixel_labs.db"
+else:
+    DATABASE_URL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "pixel_labs.db")
 
 # Daily Networking Targets
 DAILY_TARGET = int(os.getenv("DAILY_TARGET", "20"))

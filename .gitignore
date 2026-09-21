@@ -45,3 +45,5 @@ verify.py
 run.bat
 run_server.bat
 serve.py
+
+.vercel
