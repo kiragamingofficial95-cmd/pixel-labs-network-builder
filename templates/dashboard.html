@@ -789,6 +789,12 @@ tr:hover {
                     </button>
                 </div>
                 <div id="quick-status" style="font-size: 12px; color: var(--gray-500); margin-top: 8px; min-height: 18px;"></div>
+                <div id="quick-progress-bar" style="display:none; margin-top: 8px;">
+                    <div style="background: var(--gray-200); border-radius: 8px; height: 6px; overflow: hidden;">
+                        <div id="quick-progress-fill" style="background: linear-gradient(90deg, var(--primary), var(--success)); height: 100%; width: 0%; transition: width 0.5s ease; border-radius: 8px;"></div>
+                    </div>
+                    <div id="quick-progress-step" style="font-size: 11px; color: var(--gray-500); margin-top: 4px;"></div>
+                </div>
             </div>
 
             <!-- Network Balance -->
@@ -1955,11 +1961,24 @@ function startQuickSearch() {
         return;
     }
 
-    // Parse comma-separated keywords
     const allKeywords = rawKeywords.split(',').map(k => k.trim()).filter(k => k);
 
     document.getElementById('quick-search-btn').disabled = true;
-    document.getElementById('quick-status').textContent = `Searching Google for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`;
+    document.getElementById('quick-pipeline-btn').disabled = true;
+    showQuickProgress(true, 10, `🔍 Searching Google for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`);
+
+    // Animate progress bar during search
+    let fakePct = 10;
+    const progressTimer = setInterval(() => {
+        if (fakePct < 85) {
+            fakePct += Math.random() * 3;
+            const step = fakePct < 25 ? '🔍 Searching Google...' :
+                         fakePct < 50 ? '🌐 Extracting profile URLs...' :
+                         fakePct < 70 ? '📋 Scraping LinkedIn profiles...' :
+                         '💾 Storing in database...';
+            showQuickProgress(true, Math.round(fakePct), step);
+        }
+    }, 2000);
 
     const searchData = {
         keywords: rawKeywords,
@@ -1970,15 +1989,21 @@ function startQuickSearch() {
     };
 
     apiPost('/xray/search-and-store', searchData).then(result => {
+        clearInterval(progressTimer);
         document.getElementById('quick-search-btn').disabled = false;
+        document.getElementById('quick-pipeline-btn').disabled = false;
 
         if (result && result.error) {
+            showQuickProgress(true, 0, '');
+            setTimeout(() => showQuickProgress(false), 1000);
             document.getElementById('quick-status').innerHTML = '<span style="color: var(--danger);">Error: ' + result.error + '</span>';
-            showToast('Search failed', 'error');
+            showToast('Search failed - make sure you are running locally: python serve.py', 'error');
             return;
         }
 
         if (result) {
+            showQuickProgress(true, 100, `✅ Done! ${result.stored} profiles stored`);
+            setTimeout(() => showQuickProgress(false), 3000);
             document.getElementById('quick-status').innerHTML =
                 `<span style="color: var(--success);">Found ${result.found} profiles, stored ${result.stored}</span>` +
                 `<span style="margin-left: 12px; color: var(--gray-500);">→ Click "Find + Enrich" to score with Groq AI</span>`;
@@ -2003,7 +2028,21 @@ function startQuickPipeline() {
 
     document.getElementById('quick-search-btn').disabled = true;
     document.getElementById('quick-pipeline-btn').disabled = true;
-    document.getElementById('quick-status').innerHTML = `Running full pipeline for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}... <span style="color: var(--gray-500);">(1-2 min)</span>`;
+    showQuickProgress(true, 5, `🚀 Starting full pipeline for ${allKeywords.length} keyword${allKeywords.length > 1 ? 's' : ''}...`);
+
+    // Animate progress during pipeline
+    let fakePct = 5;
+    const progressTimer = setInterval(() => {
+        if (fakePct < 90) {
+            fakePct += Math.random() * 2;
+            const step = fakePct < 20 ? '🔍 Searching Google...' :
+                         fakePct < 45 ? '🌐 Scraping LinkedIn profiles...' :
+                         fakePct < 60 ? '💾 Storing in database...' :
+                         fakePct < 80 ? '🤖 Groq AI: Filtering by ICP...' :
+                         '✨ Groq AI: Enriching qualified profiles...';
+            showQuickProgress(true, Math.round(fakePct), step);
+        }
+    }, 3000);
 
     const pipelineData = {
         keywords: rawKeywords,
@@ -2014,10 +2053,13 @@ function startQuickPipeline() {
     };
 
     apiPost('/xray/full-pipeline', pipelineData).then(result => {
+        clearInterval(progressTimer);
         document.getElementById('quick-search-btn').disabled = false;
         document.getElementById('quick-pipeline-btn').disabled = false;
 
         if (result && result.error) {
+            showQuickProgress(true, 0, '');
+            setTimeout(() => showQuickProgress(false), 1000);
             document.getElementById('quick-status').innerHTML = '<span style="color: var(--danger);">Error: ' + result.error + '</span>';
             return;
         }
@@ -2025,12 +2067,27 @@ function startQuickPipeline() {
         if (result) {
             const qualified = result.qualified_count || result.icp_filter?.qualified || 0;
             const enriched = result.enriched_count || result.enrichment?.length || 0;
+            showQuickProgress(true, 100, `✅ Pipeline complete! ${qualified} qualified, ${enriched} enriched`);
+            setTimeout(() => showQuickProgress(false), 4000);
             document.getElementById('quick-status').innerHTML =
                 `<span style="color: var(--success);">Done! ${result.stored} stored, ${qualified} qualified, ${enriched} enriched</span>`;
             loadDashboard();
             showToast(`Pipeline complete: ${qualified} qualified, ${enriched} enriched!`, 'success');
         }
     });
+}
+
+function showQuickProgress(show, pct, step) {
+    const bar = document.getElementById('quick-progress-bar');
+    const fill = document.getElementById('quick-progress-fill');
+    const stepEl = document.getElementById('quick-progress-step');
+    if (show) {
+        bar.style.display = 'block';
+        fill.style.width = pct + '%';
+        stepEl.textContent = step;
+    } else {
+        bar.style.display = 'none';
+    }
 }
 
 async function loadFindPage() {

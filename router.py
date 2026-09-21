@@ -1,10 +1,13 @@
 """Main FastAPI router for Pixel Labs Network Builder."""
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Body
+from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime, date
 import json
 import os
+import asyncio
+import uuid
 
 from database import get_connection, init_db, get_stats
 from models import Prospect
@@ -21,8 +24,35 @@ from ai_client import AIClient
 router = APIRouter()
 ai_client = AIClient()
 
+# ============================================
+# Live Progress Tracker for X-Ray Search
+# ============================================
+_search_progress = {}
 
-# ============== PROSPECTS ==============
+
+def update_progress(job_id: str, **kwargs):
+    if job_id in _search_progress:
+        _search_progress[job_id].update(kwargs)
+
+
+def get_progress(job_id: str) -> dict:
+    return _search_progress.get(job_id, {"status": "unknown"})
+
+
+@router.get("/progress/{job_id}")
+async def stream_progress(job_id: str):
+    """SSE endpoint for live progress updates."""
+    async def event_stream():
+        for _ in range(300):
+            progress = get_progress(job_id)
+            yield f"data: {json.dumps(progress)}\n\n"
+            if progress.get("status") in ("done", "error"):
+                break
+            await asyncio.sleep(1)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ============================================ PROSPECTS ==============
 
 @router.get("/prospects")
 def get_prospects(
@@ -969,8 +999,12 @@ async def xray_scrape_profile(data: dict):
 @router.post("/xray/search-and-store")
 async def xray_search_and_store(data: dict):
     """X-Ray Google search -> scrape profiles -> store in DB. Supports multi-keyword."""
+    import random
     from xray_search import xray
     from database import get_connection
+
+    job_id = str(uuid.uuid4())[:8]
+    _search_progress[job_id] = {"status": "starting", "step": "Initializing search...", "found": 0, "scraped": 0, "stored": 0}
 
     keywords = data.get("keywords", "")
     all_keywords = data.get("all_keywords", [])
@@ -986,78 +1020,110 @@ async def xray_search_and_store(data: dict):
     industry = data.get("industry", "")
     max_results = data.get("max_results", 10)
 
-    # Step 1: X-Ray search Google
-    await xray.start()
-    search_result = await xray.search_xray(
-        keywords=keywords,
-        all_keywords=all_keywords if len(all_keywords) > 1 else None,
-        title=title, company=company,
-        location=location, industry=industry,
-        max_results=max_results, pages_to_search=2,
-    )
-    profiles = search_result.get("profiles", [])
-
-    # Step 2: Scrape each public profile
-    enriched_profiles = []
-    for p in profiles[:max_results]:
-        url = p.get("linkedin_url", "")
-        if url:
-            try:
-                detail = await xray.scrape_public_profile(url)
-                if detail.get("success") and detail.get("profile"):
-                    merged = {**p, **detail["profile"]}
-                    enriched_profiles.append(merged)
-                else:
-                    enriched_profiles.append(p)
-            except Exception:
-                enriched_profiles.append(p)
-            await asyncio.sleep(2 + random.uniform(1, 3))
-    await xray.stop()
-
-    # Step 3: Store in database
-    conn = get_connection()
-    cursor = conn.cursor()
-    stored = 0
-    skipped = 0
-
-    for p in enriched_profiles:
-        name = p.get("name", "").strip()
-        if not name:
-            skipped += 1
-            continue
-        company_val = p.get("company", "")
-        cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
-        if cursor.fetchone():
-            skipped += 1
-            continue
-        cursor.execute(
-            """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
-            (name, p.get("job_title", ""), company_val, p.get("location", ""),
-             p.get("industry", ""), p.get("bio", ""), p.get("linkedin_url", ""))
+    try:
+        # Step 1: X-Ray search Google
+        _search_progress[job_id].update({"status": "searching", "step": "Searching Google for LinkedIn profiles..."})
+        await xray.start()
+        search_result = await xray.search_xray(
+            keywords=keywords,
+            all_keywords=all_keywords if len(all_keywords) > 1 else None,
+            title=title, company=company,
+            location=location, industry=industry,
+            max_results=max_results, pages_to_search=2,
         )
-        stored += 1
+        profiles = search_result.get("profiles", [])
+        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles on Google", "found": len(profiles)})
 
-    conn.commit()
-    conn.close()
+        # Step 2: Scrape each public profile
+        enriched_profiles = []
+        total_to_scrape = min(len(profiles), max_results)
+        _search_progress[job_id].update({"status": "scraping", "step": f"Scraping {total_to_scrape} LinkedIn profiles...", "total_to_scrape": total_to_scrape})
 
-    return {
-        "search_query": search_result.get("query", ""),
-        "found": len(profiles),
-        "scraped_details": len(enriched_profiles),
-        "stored": stored,
-        "skipped": skipped,
-        "profiles": enriched_profiles,
-    }
+        for i, p in enumerate(profiles[:max_results]):
+            url = p.get("linkedin_url", "")
+            if url:
+                _search_progress[job_id].update({
+                    "status": "scraping",
+                    "step": f"Scraping profile {i+1}/{total_to_scrape}: {p.get('name', '...')}",
+                    "scraped": len(enriched_profiles),
+                    "current": i + 1,
+                    "total_to_scrape": total_to_scrape,
+                })
+                try:
+                    detail = await xray.scrape_public_profile(url)
+                    if detail.get("success") and detail.get("profile"):
+                        merged = {**p, **detail["profile"]}
+                        enriched_profiles.append(merged)
+                    else:
+                        enriched_profiles.append(p)
+                except Exception:
+                    enriched_profiles.append(p)
+                await asyncio.sleep(2 + random.uniform(1, 3))
+        await xray.stop()
+
+        _search_progress[job_id].update({"status": "storing", "step": f"Storing {len(enriched_profiles)} profiles in database...", "scraped": len(enriched_profiles)})
+
+        # Step 3: Store in database
+        conn = get_connection()
+        cursor = conn.cursor()
+        stored = 0
+        skipped = 0
+
+        for p in enriched_profiles:
+            name = p.get("name", "").strip()
+            if not name:
+                skipped += 1
+                continue
+            company_val = p.get("company", "")
+            cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
+            if cursor.fetchone():
+                skipped += 1
+                continue
+            cursor.execute(
+                """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
+                (name, p.get("job_title", ""), company_val, p.get("location", ""),
+                 p.get("industry", ""), p.get("bio", ""), p.get("linkedin_url", ""))
+            )
+            stored += 1
+
+        conn.commit()
+        conn.close()
+
+        _search_progress[job_id].update({
+            "status": "done",
+            "step": f"Done! {stored} profiles stored, {skipped} skipped",
+            "found": len(profiles),
+            "scraped": len(enriched_profiles),
+            "stored": stored,
+            "skipped": skipped,
+        })
+
+        return {
+            "job_id": job_id,
+            "search_query": search_result.get("query", ""),
+            "found": len(profiles),
+            "scraped_details": len(enriched_profiles),
+            "stored": stored,
+            "skipped": skipped,
+            "profiles": enriched_profiles,
+        }
+    except Exception as e:
+        _search_progress[job_id].update({"status": "error", "step": f"Error: {str(e)[:200]}"})
+        return {"error": str(e)[:500], "profiles": [], "stored": 0, "found": 0, "job_id": job_id}
 
 
 @router.post("/xray/full-pipeline")
 async def xray_full_pipeline(data: dict):
     """Full pipeline: X-Ray search -> scrape -> store -> ICP filter -> enrich via Groq. Supports multi-keyword."""
+    import random
     from xray_search import xray
     from database import get_connection
     from icp_profile import get_active_icp
     from ai_client import ai_client
+
+    job_id = str(uuid.uuid4())[:8]
+    _search_progress[job_id] = {"status": "starting", "step": "Initializing pipeline...", "found": 0, "scraped": 0, "stored": 0, "qualified": 0, "enriched": 0}
 
     keywords = data.get("keywords", "")
     all_keywords = data.get("all_keywords", [])
@@ -1077,99 +1143,128 @@ async def xray_full_pipeline(data: dict):
     if not keywords and not title:
         return {"error": "At least keywords or title required"}
 
-    # Step 1: X-Ray search
-    await xray.start()
-    search_result = await xray.search_xray(
-        keywords=keywords,
-        all_keywords=all_keywords if len(all_keywords) > 1 else None,
-        title=title, company=company,
-        location=location, industry=industry,
-        max_results=max_results, pages_to_search=2,
-    )
-    profiles = search_result.get("profiles", [])
-
-    # Step 2: Scrape each profile
-    detailed_profiles = []
-    for p in profiles[:max_results]:
-        url = p.get("linkedin_url", "")
-        if url:
-            try:
-                detail = await xray.scrape_public_profile(url)
-                if detail.get("success") and detail.get("profile"):
-                    merged = {**p, **detail["profile"]}
-                    detailed_profiles.append(merged)
-                else:
-                    detailed_profiles.append(p)
-            except Exception:
-                detailed_profiles.append(p)
-            await asyncio.sleep(2 + random.uniform(1, 3))
-    await xray.stop()
-
-    if not detailed_profiles:
-        return {"message": "No profiles found", "profiles": []}
-
-    # Step 3: Store in DB
-    conn = get_connection()
-    cursor = conn.cursor()
-    stored_profiles = []
-
-    for p in detailed_profiles:
-        name = p.get("name", "").strip()
-        if not name:
-            continue
-        company_val = p.get("company", "")
-        cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
-        if cursor.fetchone():
-            continue
-        cursor.execute(
-            """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
-            (name, p.get("job_title", ""), company_val, p.get("location", ""),
-             p.get("industry", ""), p.get("bio", ""), p.get("linkedin_url", ""))
+    try:
+        # Step 1: X-Ray search
+        _search_progress[job_id].update({"status": "searching", "step": "Searching Google for LinkedIn profiles..."})
+        await xray.start()
+        search_result = await xray.search_xray(
+            keywords=keywords,
+            all_keywords=all_keywords if len(all_keywords) > 1 else None,
+            title=title, company=company,
+            location=location, industry=industry,
+            max_results=max_results, pages_to_search=2,
         )
-        stored_profiles.append({
-            "id": cursor.lastrowid, "name": name,
-            "job_title": p.get("job_title", ""), "company": company_val,
-            "location": p.get("location", ""), "industry": p.get("industry", ""),
-            "bio": p.get("bio", ""), "linkedin_url": p.get("linkedin_url", ""),
+        profiles = search_result.get("profiles", [])
+        _search_progress[job_id].update({"status": "searching_done", "step": f"Found {len(profiles)} profiles on Google", "found": len(profiles)})
+
+        # Step 2: Scrape each profile
+        detailed_profiles = []
+        total_to_scrape = min(len(profiles), max_results)
+        _search_progress[job_id].update({"status": "scraping", "step": f"Scraping {total_to_scrape} LinkedIn profiles...", "total_to_scrape": total_to_scrape})
+
+        for i, p in enumerate(profiles[:max_results]):
+            url = p.get("linkedin_url", "")
+            if url:
+                _search_progress[job_id].update({
+                    "status": "scraping",
+                    "step": f"Scraping {i+1}/{total_to_scrape}: {p.get('name', '...')}",
+                    "scraped": len(detailed_profiles),
+                    "current": i + 1,
+                    "total_to_scrape": total_to_scrape,
+                })
+                try:
+                    detail = await xray.scrape_public_profile(url)
+                    if detail.get("success") and detail.get("profile"):
+                        merged = {**p, **detail["profile"]}
+                        detailed_profiles.append(merged)
+                    else:
+                        detailed_profiles.append(p)
+                except Exception:
+                    detailed_profiles.append(p)
+                await asyncio.sleep(2 + random.uniform(1, 3))
+        await xray.stop()
+
+        if not detailed_profiles:
+            _search_progress[job_id].update({"status": "done", "step": "No profiles found"})
+            return {"message": "No profiles found", "profiles": [], "job_id": job_id}
+
+        # Step 3: Store in DB
+        _search_progress[job_id].update({"status": "storing", "step": f"Storing {len(detailed_profiles)} profiles...", "scraped": len(detailed_profiles)})
+        conn = get_connection()
+        cursor = conn.cursor()
+        stored_profiles = []
+
+        for p in detailed_profiles:
+            name = p.get("name", "").strip()
+            if not name:
+                continue
+            company_val = p.get("company", "")
+            cursor.execute("SELECT id FROM prospects WHERE name = ? AND company = ?", (name, company_val))
+            if cursor.fetchone():
+                continue
+            cursor.execute(
+                """INSERT INTO prospects (name, job_title, company, location, industry, bio, linkedin_url, status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW')""",
+                (name, p.get("job_title", ""), company_val, p.get("location", ""),
+                 p.get("industry", ""), p.get("bio", ""), p.get("linkedin_url", ""))
+            )
+            stored_profiles.append({
+                "id": cursor.lastrowid, "name": name,
+                "job_title": p.get("job_title", ""), "company": company_val,
+                "location": p.get("location", ""), "industry": p.get("industry", ""),
+                "bio": p.get("bio", ""), "linkedin_url": p.get("linkedin_url", ""),
+            })
+        conn.commit()
+        conn.close()
+
+        result = {
+            "job_id": job_id,
+            "search_query": search_result.get("query", ""),
+            "found": len(profiles),
+            "stored": len(stored_profiles),
+            "profiles": stored_profiles,
+        }
+        _search_progress[job_id].update({"status": "storing_done", "step": f"Stored {len(stored_profiles)} profiles", "stored": len(stored_profiles)})
+
+        # Step 4: ICP filter + Enrich via Groq
+        if not icp_criteria:
+            icp_profile = get_active_icp()
+            if icp_profile:
+                icp_criteria = {
+                    "target_industries": icp_profile.get("target_industries", []),
+                    "target_titles": icp_profile.get("target_titles", []),
+                    "target_keywords": icp_profile.get("target_keywords", []),
+                    "exclude_keywords": icp_profile.get("exclude_keywords", []),
+                    "target_locations": icp_profile.get("target_locations", []),
+                }
+
+        if icp_criteria and stored_profiles and ai_client.available:
+            _search_progress[job_id].update({"status": "filtering", "step": "Running Groq AI ICP filter...", "stored": len(stored_profiles)})
+            filter_result = ai_client.filter_profiles_by_icp(stored_profiles, icp_criteria)
+            result["icp_filter"] = filter_result
+
+            qualified = [f for f in filter_result.get("filtered", []) if f.get("icp_score", 0) >= 60]
+            qualified_profiles = []
+            for q in qualified:
+                idx = q.get("index", 0) - 1
+                if 0 <= idx < len(stored_profiles):
+                    qualified_profiles.append(stored_profiles[idx])
+
+            _search_progress[job_id].update({"status": "enriching", "step": f"Enriching {len(qualified_profiles)} qualified profiles via Groq AI...", "qualified": len(qualified_profiles)})
+
+            if qualified_profiles:
+                enrichment = ai_client.enrich_profiles(qualified_profiles)
+                result["enrichment"] = enrichment
+                result["qualified_count"] = len(qualified)
+                result["enriched_count"] = len(enrichment)
+                _search_progress[job_id].update({"enriched": len(enrichment)})
+
+        _search_progress[job_id].update({
+            "status": "done",
+            "step": f"Pipeline complete! {result.get('qualified_count', 0)} qualified, {result.get('enriched_count', 0)} enriched",
         })
-    conn.commit()
-    conn.close()
 
-    result = {
-        "search_query": search_result.get("query", ""),
-        "found": len(profiles),
-        "stored": len(stored_profiles),
-        "profiles": stored_profiles,
-    }
-
-    # Step 4: ICP filter + Enrich via Groq
-    if not icp_criteria:
-        icp_profile = get_active_icp()
-        if icp_profile:
-            icp_criteria = {
-                "target_industries": icp_profile.get("target_industries", []),
-                "target_titles": icp_profile.get("target_titles", []),
-                "target_keywords": icp_profile.get("target_keywords", []),
-                "exclude_keywords": icp_profile.get("exclude_keywords", []),
-                "target_locations": icp_profile.get("target_locations", []),
-            }
-
-    if icp_criteria and stored_profiles and ai_client.available:
-        filter_result = ai_client.filter_profiles_by_icp(stored_profiles, icp_criteria)
-        result["icp_filter"] = filter_result
-
-        qualified = [f for f in filter_result.get("filtered", []) if f.get("icp_score", 0) >= 60]
-        qualified_profiles = []
-        for q in qualified:
-            idx = q.get("index", 0) - 1
-            if 0 <= idx < len(stored_profiles):
-                qualified_profiles.append(stored_profiles[idx])
-
-        if qualified_profiles:
-            enrichment = ai_client.enrich_profiles(qualified_profiles)
-            result["enrichment"] = enrichment
-            result["qualified_count"] = len(qualified)
-            result["enriched_count"] = len(enrichment)
-
-    return result
+        return result
+    except Exception as e:
+        _search_progress[job_id].update({"status": "error", "step": f"Error: {str(e)[:200]}"})
+        return {"error": str(e)[:500], "profiles": [], "stored": 0, "found": 0, "job_id": job_id}
