@@ -488,15 +488,15 @@ def filter_and_enrich(data: dict):
         for row in rows:
             profiles.append({
                 "name": row["name"],
-                "job_title": row.get("job_title"),
-                "company": row.get("company"),
-                "location": row.get("location"),
-                "industry": row.get("industry"),
-                "bio": row.get("bio"),
-                "about": row.get("about"),
-                "notes": row.get("notes"),
-                "linkedin_url": row.get("linkedin_url"),
-                "headline": row.get("job_title"),  # Use job_title as headline for AI
+                "job_title": row["job_title"],
+                "company": row["company"],
+                "location": row["location"],
+                "industry": row["industry"],
+                "bio": row["bio"],
+                "about": row["about"],
+                "notes": row["notes"],
+                "linkedin_url": row["linkedin_url"],
+                "headline": row["job_title"],  # Use job_title as headline for AI
             })
 
     icp_criteria = data.get("icp_criteria")
