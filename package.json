@@ -1,0 +1,16 @@
+{
+  "name": "pixel-labs-network-builder",
+  "version": "1.0.0",
+  "description": "Professional LinkedIn Network Research + Recommendation Assistant for Pixel Labs",
+  "main": "main.py",
+  "scripts": {
+    "start": "python serve.py",
+    "dev": "python serve.py",
+    "install": "pip install -r requirements.txt",
+    "build": "pip install -r requirements.txt"
+  },
+  "keywords": ["linkedin", "networking", "fastapi", "pixel-labs", "crm", "vercel"],
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
